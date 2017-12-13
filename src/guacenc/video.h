@@ -24,8 +24,12 @@
 #include "buffer.h"
 
 #include <guacamole/timestamp.h>
+#ifndef AVCODEC_AVCODEC_H
 #include <libavcodec/avcodec.h>
+#endif
+#ifndef AVFORMAT_AVFORMAT_H
 #include <libavformat/avformat.h>
+#endif
 
 #include <stdint.h>
 #include <stdio.h>

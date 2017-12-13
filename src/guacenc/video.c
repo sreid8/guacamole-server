@@ -24,8 +24,12 @@
 #include "video.h"
 
 #include <cairo/cairo.h>
+#ifndef AVCODEC_AVCODEC_H
 #include <libavcodec/avcodec.h>
+#endif
+#ifndef AVFORMAT_AVFORMAT_H
 #include <libavformat/avformat.h>
+#endif
 #include <libavutil/common.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
@@ -84,6 +88,11 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
 	}
 	video_stream->id = container_format_context->nb_streams - 1;
 
+	video_stream->time_base = video_stream->codec->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
+
+	av_dump_format(container_format_context, 0, path, 1);
+
+
 
 	/* Retrieve encoding context */
 	AVCodecContext* avcodec_context = video_stream->codec;
@@ -98,10 +107,13 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     avcodec_context->bit_rate = bitrate;
     avcodec_context->width = width;
     avcodec_context->height = height;
-    avcodec_context->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
     avcodec_context->gop_size = 10;
     avcodec_context->max_b_frames = 1;
+    avcodec_context->qmax = 31;
+    avcodec_context->qmin = 2;
     avcodec_context->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    av_dump_format(container_format_context, 0, path, 1);
 
     /* Open codec for use */
     if (avcodec_open2(avcodec_context, codec, NULL) < 0) {
@@ -479,17 +491,29 @@ int guacenc_video_free(guacenc_video* video) {
         retval = guacenc_video_write_frame(video, NULL);
     } while (retval > 0);
 
+    /* write trailer, if needed */
+    if (video->container_format_context != NULL &&
+    		video->output_stream != NULL) {
+    	guacenc_log(GUAC_LOG_INFO, "%d\n", av_write_trailer(video->container_format_context));
+    }
+
     /* File is now completely written */
-    avio_close(video->container_format_context->pb);
+    if (video->container_format_context != NULL) {
+    	avio_close(video->container_format_context->pb);
+    }
 
     /* Free frame encoding data */
-    av_freep(&video->next_frame->data[0]);
-    av_frame_free(&video->next_frame);
+    if (&video->next_frame != NULL) {
+    	av_freep(&video->next_frame->data[0]);
+    	av_frame_free(&video->next_frame);
+    }
+
 
     /* Clean up encoding context */
-    avcodec_close(video->context);
-    avcodec_free_context(&(video->context));
-    avformat_free_context(video->container_format_context);
+    if (video->context != NULL) {
+    	avcodec_close(video->context);
+    	avcodec_free_context(&(video->context));
+    }
 
     free(video);
     return 0;

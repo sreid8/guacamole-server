@@ -51,6 +51,28 @@
  */
 static int guacenc_write_packet(guacenc_video* video, void* data, int size) {
 
+	int ret;
+
+	/* use AVStream is not null, otherwise write to output fd */
+	if (video->output_stream != NULL &&
+			video->container_format_context != NULL &&
+			size > 0) {
+		AVPacket *pkt = (AVPacket*) data;
+		pkt->stream_index = video->output_stream->index;
+		ret = av_interleaved_write_frame(video->container_format_context, pkt);
+
+		if (ret != 0) {
+			guacenc_log(GUAC_LOG_ERROR, "Unable to write frame "
+					"#%" PRId64 ": %s", video->next_pts, strerror(errno));
+			return -1;
+		}
+
+		/* Data was written successfully */
+		guacenc_log(GUAC_LOG_DEBUG, "Frame #%08" PRId64 ": wrote %i bytes",
+				video->next_pts, size);
+
+		return ret;
+	}
     /* Write data, logging any errors */
     if (fwrite(data, 1, size, video->output) == 0) {
         guacenc_log(GUAC_LOG_ERROR, "Unable to write frame "
@@ -123,7 +145,13 @@ int guacenc_avcodec_encode_video(guacenc_video* video, AVFrame* frame) {
 
     /* Write corresponding data to file */
     if (got_data) {
-        guacenc_write_packet(video, packet.data, packet.size);
+    	if (packet.pts != AV_NOPTS_VALUE) {
+    		packet.pts = av_rescale_q(packet.pts, video->output_stream->codec->time_base, video->output_stream->time_base);
+    	}
+    	if (packet.dts != AV_NOPTS_VALUE) {
+    		packet.dts = av_rescale_q(packet.dts, video->output_stream->codec->time_base, video->output_stream->time_base);
+    	}
+        guacenc_write_packet(video, &packet, packet.size);
         av_packet_unref(&packet);
     }
 #else

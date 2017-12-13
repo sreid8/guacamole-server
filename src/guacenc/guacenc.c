@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
 
     /* Parse arguments */
     int opt;
-    while ((opt = getopt(argc, argv, "s:r:f:i:o:c")) != -1) {
+    while ((opt = getopt(argc, argv, "s:r:f:i:o:c:")) != -1) {
 
         /* -s: Dimensions (WIDTHxHEIGHT) */
         if (opt == 's') {
@@ -90,12 +90,6 @@ int main(int argc, char* argv[]) {
     guacenc_log(GUAC_LOG_INFO, "Guacamole video encoder (guacenc) "
             "version " VERSION);
 
-    /* Prepare libavcodec */
-    avcodec_register_all();
-
-    /* Prepare libavformat */
-    av_register_all();
-
 
     if (input == NULL) {
     	guacenc_log(GUAC_LOG_INFO, "No input file specified. Nothing to do.");
@@ -105,6 +99,14 @@ int main(int argc, char* argv[]) {
     if (output == NULL) {
     	guacenc_log(GUAC_LOG_ERROR, "No output file specified. Cannot continue.");
     }
+
+    /* Prepare libavcodec */
+    avcodec_register_all();
+
+    /* Prepare libavformat */
+    av_register_all();
+
+
 
     guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
             "and %i bps.", width, height, bitrate);
@@ -137,7 +139,8 @@ invalid_options:
             " [-s WIDTHxHEIGHT]"
             " [-r BITRATE]"
     		" [-i INPUT_FILE]"
-    		" [-o OUTPUT FILE"
+    		" [-o OUTPUT FILE]"
+    		" [-c FFMPEG-CODEC]"
             " [-f]"
     		, argv[0]);
 

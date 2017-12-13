@@ -157,6 +157,25 @@ AC_ARG_WITH(guacd_conf,
 AC_DEFINE_UNQUOTED([GUACD_CONF_FILE], ["$guacd_conf"], [The full path to the guacd config file])
 
 #
+# libavformat
+#
+
+have_libavformat=disabled
+AC_ARG_WITH([libavformat],
+	    [AS_HELP_STRING([--with-libavformat],
+	                    [use libavformat when encoding video @<:@default=check@:>@])],
+            [].
+            [with_libavformat=check])
+if test "x$with_libavformat" != "xno"
+then
+    have_libavformat=yes
+    PKG_CHECK_MODULES([AVFORMAT], [libavformat],, [have_libavformat=no]);
+fi
+
+AM_CONDITIONAL([ENABLE_AVFORMAT], [test "x${have_libavformat}" = "xyes"])
+
+
+#
 # libavcodec
 #
 
@@ -212,6 +231,7 @@ then
 fi
 
 AM_CONDITIONAL([ENABLE_SWSCALE], [test "x${have_libswscale}" = "xyes"])
+
 
 #
 # libssl
@@ -1186,10 +1206,11 @@ AC_ARG_ENABLE([guacenc],
               [],
               [enable_guacenc=yes])
 
-AM_CONDITIONAL([ENABLE_GUACENC], [test "x${enable_guacenc}"  = "xyes" \
-                                    -a "x${have_libavcodec}" = "xyes" \
-                                    -a "x${have_libavutil}"  = "xyes" \
-                                    -a "x${have_libswscale}" = "xyes"])
+AM_CONDITIONAL([ENABLE_GUACENC], [test "x${enable_guacenc}"   = "xyes" \
+                                    -a "x${have_libavcodec}"  = "xyes" \
+                                    -a "x${have_libavutil}"   = "xyes" \
+                                    -a "x${have_libswscale}"  = "xyes" \
+				    -a "x${have_libavformat}" = "xyes"])
 
 #
 # Output Makefiles
@@ -1247,6 +1268,7 @@ $PACKAGE_NAME version $PACKAGE_VERSION
      pango ............... ${have_pango}
      libavcodec .......... ${have_libavcodec}
      libavutil ........... ${have_libavutil}
+     libavformat...........${have_libavformat}
      libssh2 ............. ${have_libssh2}
      libssl .............. ${have_ssl}
      libswscale .......... ${have_libswscale}
