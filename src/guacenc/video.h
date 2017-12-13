@@ -25,6 +25,7 @@
 
 #include <guacamole/timestamp.h>
 #include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -41,16 +42,28 @@
  */
 typedef struct guacenc_video {
 
+	/**
+	 * Output file stream.
+	 */
+	FILE* output;
+
     /**
-     * Output file stream.
+     * AVStream for the video output.
+     * Persists via the AVFormatContext.
      */
-    FILE* output;
+    AVStream* output_stream;
 
     /**
      * The open encoding context from libavcodec, created for the codec
      * specified when this guacenc_video was created.
      */
     AVCodecContext* context;
+
+    /**
+     * The open format context from libavformat, created for the file container
+     * specified when this guacenc video was created.
+     */
+    AVFormatContext* container_format_context;
 
     /**
      * The width of the video, in pixels.
