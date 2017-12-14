@@ -88,7 +88,8 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
 	}
 	video_stream->id = container_format_context->nb_streams - 1;
 
-	video_stream->time_base = video_stream->codec->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
+	video_stream->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
+	video_stream->codec->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
 
 	av_dump_format(container_format_context, 0, path, 1);
 
@@ -112,6 +113,10 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     avcodec_context->qmax = 31;
     avcodec_context->qmin = 2;
     avcodec_context->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    if (container_format_context->oformat->flags & AVFMT_GLOBALHEADER) {
+    	avcodec_context->flags |= CODEC_FLAG_GLOBAL_HEADER;
+    }
 
     av_dump_format(container_format_context, 0, path, 1);
 
