@@ -80,7 +80,8 @@ static int guacenc_write_packet(guacenc_video* video, void* data, int size) {
 
 #else
 		/* we know data is already a packet if we're using a newer libavcodec */
-		pkt = (AVPacket*) data;pkt->stream_index = video->output_stream->index;
+		pkt = (AVPacket*) data;
+		pkt->stream_index = video->output_stream->index;
 		ret = av_interleaved_write_frame(video->container_format_context, pkt);
 #endif
 

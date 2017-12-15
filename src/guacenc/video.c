@@ -74,7 +74,7 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
 	/* Pull codec based on name */
 	AVCodec* codec = avcodec_find_encoder_by_name(codec_name);
 	if (codec == NULL) {
-		guacenc_log(GUAC_LOG_ERROR, "Failed to locate codec \"%s\".",
+		guacenc_log(GUAC_LOG_ERROR, "Installed version of ffmpeg does not support codec \"%s\".",
 				codec_name);
 		goto fail_codec;
 	}
@@ -144,8 +144,7 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     if (!(container_format->flags & AVFMT_NOFILE)) {
     	ret = avio_open(&container_format_context->pb, path, AVIO_FLAG_WRITE);
     	if (ret < 0) {
-    		guacenc_log(GUAC_LOG_ERROR, "Error occurred while opening output file: %d\n",
-    				(ret));
+    		guacenc_log(GUAC_LOG_ERROR, "Error occurred while opening output file\n");
     		goto fail_output_avio;
     	}
     }
@@ -153,8 +152,7 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     /* write the stream header, if needed */
     ret = avformat_write_header(container_format_context, NULL);
     if (ret < 0) {
-    	guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header: %d\n",
-    	    		(ret));
+    	guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header\n");
     }
 
     /* Allocate video structure */

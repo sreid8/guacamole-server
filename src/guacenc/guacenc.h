@@ -45,9 +45,33 @@
 #define GUACENC_DEFAULT_BITRATE 2000000
 
 /**
+ * The allowed codecs for guacenc. More might work, but these are the ones that
+ * have been confirmed to work properly
+ */
+
+#define GUACENC_ALLOWED_CODECS "libx264", "libx265", "libvpx", "mpeg4"
+
+/**
  * The default log level below which no messages should be logged.
  */
 #define GUACENC_DEFAULT_LOG_LEVEL GUAC_LOG_INFO
+
+/**
+ * Determines if a codec requested as a command line argument is allowed
+ * by guacenc.
+ *
+ * @param codec
+ *     The name of the codec requested as a command line argument
+ *
+ * @return
+ *     0 if allowed, -1 if not allowed
+ */
+int allowed_codec(char* codec);
+
+/**
+ * Prints an error and lists the supported codecs to stderr.
+ */
+void error_codecs(void);
 
 #endif
 

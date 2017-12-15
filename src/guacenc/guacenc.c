@@ -91,6 +91,10 @@ int main(int argc, char* argv[]) {
             "version " VERSION);
 
 
+    if (allowed_codec(codec) < 0) {
+    	goto invalid_codec;
+    }
+
     if (input == NULL) {
     	guacenc_log(GUAC_LOG_INFO, "No input file specified. Nothing to do.");
     	return 0;
@@ -146,5 +150,34 @@ invalid_options:
 
     return 1;
 
+invalid_codec:
+
+	error_codecs();
+	return 1;
+
+}
+
+int allowed_codec(char* codec) {
+	char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
+	int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
+	int i;
+
+	for (i = 0; i < size; i++) {
+		if (strcmp(codec, allowed_codecs[i]) == 0) {
+			return 0;
+		}
+	}
+	return -1;
+}
+
+void error_codecs() {
+	fprintf(stderr, "ERROR: unsupported codec specified. List of supported codecs:\n");
+	char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
+	int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
+	int i;
+	for (i = 0; i < size; i ++) {
+		fprintf(stderr, "%s ", allowed_codecs[i]);
+	}
+	fprintf(stderr, "\n");
 }
 
