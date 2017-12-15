@@ -54,52 +54,49 @@ static int guacenc_write_packet(guacenc_video* video, void* data, int size) {
 	int ret;
 	AVPacket *pkt;
 
-	/* use AVStream is not null, otherwise write to output fd */
-	if (video->output_stream != NULL &&
-			video->container_format_context != NULL &&
-			size > 0) {
 
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(54,1,0)
 
-		pkt =  malloc(sizeof(AVPacket));
-		/* have to create a packet around the encoded data we have */
-		av_init_packet(pkt);
+	pkt =  malloc(sizeof(AVPacket));
+	/* have to create a packet around the encoded data we have */
+	av_init_packet(pkt);
 
-		if (video->context->coded_frame->pts != AV_NOPTS_VALUE) {
-			pkt->pts = av_rescale_q(video->context->coded_frame->pts, video->context->time_base, video->output_stream->time_base);
-		}
-		if (video->context->coded_frame->key_frame) {
-			pkt->flags |= AV_PKT_FLAG_KEY;
-		}
+	if (video->context->coded_frame->pts != AV_NOPTS_VALUE) {
+		pkt->pts = av_rescale_q(video->context->coded_frame->pts,
+				video->context->time_base,
+				video->output_stream->time_base);
+	}
+	if (video->context->coded_frame->key_frame) {
+		pkt->flags |= AV_PKT_FLAG_KEY;
+	}
 
-		pkt->data = data;
-		pkt->size = size;
-		pkt->stream_index = video->output_stream->index;
-		ret = av_interleaved_write_frame(video->container_format_context, pkt);
-		free(pkt);
+	pkt->data = data;
+	pkt->size = size;
+	pkt->stream_index = video->output_stream->index;
+	ret = av_interleaved_write_frame(video->container_format_context, pkt);
+	free(pkt);
 
 #else
-		/* we know data is already a packet if we're using a newer libavcodec */
-		pkt = (AVPacket*) data;
-		pkt->stream_index = video->output_stream->index;
-		ret = av_interleaved_write_frame(video->container_format_context, pkt);
+	/* we know data is already a packet if we're using a newer libavcodec */
+	pkt = (AVPacket*) data;
+	pkt->stream_index = video->output_stream->index;
+	ret = av_interleaved_write_frame(video->container_format_context, pkt);
 #endif
 
 
-		if (ret != 0) {
-			guacenc_log(GUAC_LOG_ERROR, "Unable to write frame "
-					"#%" PRId64 ": %s", video->next_pts, strerror(errno));
-			return -1;
-		}
-
-		/* Data was written successfully */
-		guacenc_log(GUAC_LOG_DEBUG, "Frame #%08" PRId64 ": wrote %i bytes",
-				video->next_pts, size);
-
-		return ret;
+	if (ret != 0) {
+		guacenc_log(GUAC_LOG_ERROR, "Unable to write frame "
+				"#%" PRId64 ": %s", video->next_pts, strerror(errno));
+		return -1;
 	}
 
-    return 0;
+	/* Data was written successfully */
+	guacenc_log(GUAC_LOG_DEBUG, "Frame #%08" PRId64 ": wrote %i bytes",
+			video->next_pts, size);
+
+	return ret;
+
+	return 0;
 
 }
 

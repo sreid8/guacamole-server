@@ -46,11 +46,6 @@
  */
 typedef struct guacenc_video {
 
-	/**
-	 * Output file stream.
-	 */
-	FILE* output;
-
     /**
      * AVStream for the video output.
      * Persists via the AVFormatContext.
