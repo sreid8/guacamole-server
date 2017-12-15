@@ -109,7 +109,6 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     avcodec_context->width = width;
     avcodec_context->height = height;
     avcodec_context->gop_size = 10;
-    avcodec_context->max_b_frames = 1;
     avcodec_context->qmax = 31;
     avcodec_context->qmin = 2;
     avcodec_context->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -117,8 +116,6 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     if (container_format_context->oformat->flags & AVFMT_GLOBALHEADER) {
     	avcodec_context->flags |= CODEC_FLAG_GLOBAL_HEADER;
     }
-
-    av_dump_format(container_format_context, 0, path, 1);
 
     /* Open codec for use */
     if (avcodec_open2(avcodec_context, codec, NULL) < 0) {
@@ -147,8 +144,8 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     if (!(container_format->flags & AVFMT_NOFILE)) {
     	ret = avio_open(&container_format_context->pb, path, AVIO_FLAG_WRITE);
     	if (ret < 0) {
-    		guacenc_log(GUAC_LOG_ERROR, "Error occurred while opening output file: %s\n",
-    				av_err2str(ret));
+    		guacenc_log(GUAC_LOG_ERROR, "Error occurred while opening output file: %d\n",
+    				(ret));
     		goto fail_output_avio;
     	}
     }
@@ -156,8 +153,8 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     /* write the stream header, if needed */
     ret = avformat_write_header(container_format_context, NULL);
     if (ret < 0) {
-    	guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header: %s\n",
-    	    		av_err2str(ret));
+    	guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header: %d\n",
+    	    		(ret));
     }
 
     /* Allocate video structure */
