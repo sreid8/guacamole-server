@@ -69,15 +69,15 @@ int main(int argc, char* argv[]) {
 
         /* -i: Input file */
         else if (opt == 'i')
-        	input = optarg;
+            input = optarg;
 
         /* -o: Output file */
         else if (opt == 'o')
-        	output = optarg;
+            output = optarg;
 
         /* -c: libavcodec name */
         else if (opt == 'c')
-        	codec = optarg;
+            codec = optarg;
 
         /* Invalid option */
         else {
@@ -92,16 +92,16 @@ int main(int argc, char* argv[]) {
 
 
     if (allowed_codec(codec) < 0) {
-    	goto invalid_codec;
+        goto invalid_codec;
     }
 
     if (input == NULL) {
-    	guacenc_log(GUAC_LOG_INFO, "No input file specified. Nothing to do.");
-    	return 0;
+        guacenc_log(GUAC_LOG_INFO, "No input file specified. Nothing to do.");
+        return 0;
     }
 
     if (output == NULL) {
-    	guacenc_log(GUAC_LOG_ERROR, "No output file specified. Cannot continue.");
+        guacenc_log(GUAC_LOG_ERROR, "No output file specified. Cannot continue.");
     }
 
     /* Prepare libavcodec */
@@ -116,68 +116,68 @@ int main(int argc, char* argv[]) {
             "and %i bps.", width, height, bitrate);
 
 
-        /* Do not write if filename exceeds maximum length */
-        if (strlen(output) >= 4096) {
-            guacenc_log(GUAC_LOG_ERROR, "Cannot write output file for \"%s\": "
-                    "Name too long", output);
-            return 1;
-        }
+    /* Do not write if filename exceeds maximum length */
+    if (strlen(output) >= 4096) {
+        guacenc_log(GUAC_LOG_ERROR, "Cannot write output file for \"%s\": "
+                "Name too long", output);
+        return 1;
+    }
 
-        /* Attempt encoding, log granular success/failure at debug level */
-        if (guacenc_encode(input, output, codec,
-                    width, height, bitrate, force)) {
-            guacenc_log(GUAC_LOG_DEBUG,
-                    "%s was NOT successfully encoded.", input);
-        }
-        else
-            guacenc_log(GUAC_LOG_DEBUG, "%s was successfully encoded.", input);
+    /* Attempt encoding, log granular success/failure at debug level */
+    if (guacenc_encode(input, output, codec,
+            width, height, bitrate, force)) {
+        guacenc_log(GUAC_LOG_DEBUG,
+                "%s was NOT successfully encoded.", input);
+    }
+    else
+        guacenc_log(GUAC_LOG_DEBUG, "%s was successfully encoded.", input);
 
 
     /* Encoding complete */
     return 0;
 
     /* Display usage and exit with error if options are invalid */
-invalid_options:
+    invalid_options:
 
     fprintf(stderr, "USAGE: %s"
             " [-s WIDTHxHEIGHT]"
             " [-r BITRATE]"
-    		" [-i INPUT_FILE]"
-    		" [-o OUTPUT FILE]"
-    		" [-c FFMPEG-CODEC]"
+            " [-i INPUT_FILE]"
+            " [-o OUTPUT FILE]"
+            " [-c FFMPEG-CODEC]"
             " [-f]"
-    		, argv[0]);
+            , argv[0]);
 
     return 1;
 
-invalid_codec:
+    invalid_codec:
 
-	error_codecs();
-	return 1;
+    error_codecs();
+    return 1;
 
 }
 
 int allowed_codec(char* codec) {
-	char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
-	int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
-	int i;
+    char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
+    int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
+    int i;
 
-	for (i = 0; i < size; i++) {
-		if (strcmp(codec, allowed_codecs[i]) == 0) {
-			return 0;
-		}
-	}
-	return -1;
+    for (i = 0; i < size; i++) {
+        if (strcmp(codec, allowed_codecs[i]) == 0) {
+            return 0;
+        }
+    }
+    return -1;
 }
 
 void error_codecs() {
-	fprintf(stderr, "ERROR: unsupported codec specified. List of supported codecs:\n");
-	char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
-	int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
-	int i;
-	for (i = 0; i < size; i ++) {
-		fprintf(stderr, "%s ", allowed_codecs[i]);
-	}
-	fprintf(stderr, "\n");
+    fprintf(stderr, "ERROR: unsupported codec specified. List of supported codecs:\n");
+    char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
+    int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
+    int i;
+    for (i = 0; i < size; i ++) {
+        fprintf(stderr, "%s ", allowed_codecs[i]);
+    }
+    fprintf(stderr, "\n");
 }
 

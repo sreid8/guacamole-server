@@ -49,59 +49,58 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
         int width, int height, int bitrate) {
 
 
-	AVOutputFormat *container_format;
-	AVFormatContext *container_format_context;
-	AVStream *video_stream;
-	int ret;
+    AVOutputFormat *container_format;
+    AVFormatContext *container_format_context;
+    AVStream *video_stream;
+    int ret;
 
-	/* allocate the output media context */
-	avformat_alloc_output_context2(&container_format_context, NULL, NULL, path);
-	if (!container_format_context) {
-		guacenc_log(GUAC_LOG_INFO, "Unable to determine container format from filename, using MPEG4.\n");
-		avformat_alloc_output_context2(&container_format_context, NULL, "mpeg4", path);
-	}
-	else {
-		guacenc_log(GUAC_LOG_INFO, "Using container %s\n", container_format_context->oformat->name);
-	}
+    /* allocate the output media context */
+    avformat_alloc_output_context2(&container_format_context, NULL, NULL, path);
+    if (!container_format_context) {
+        guacenc_log(GUAC_LOG_INFO, "Unable to determine container format from filename, using MPEG4.\n");
+        avformat_alloc_output_context2(&container_format_context, NULL, "mpeg4", path);
+    }
+    else {
+        guacenc_log(GUAC_LOG_INFO, "Using container %s\n", container_format_context->oformat->name);
+    }
 
-	if (!container_format_context) {
-		guacenc_log(GUAC_LOG_ERROR, "Could not build container format context. Encoding failed.");
-		goto fail_context;
-	}
+    if (!container_format_context) {
+        guacenc_log(GUAC_LOG_ERROR, "Could not build container format context. Encoding failed.");
+        goto fail_context;
+    }
 
-	container_format = container_format_context->oformat;
+    container_format = container_format_context->oformat;
 
-	/* Pull codec based on name */
-	AVCodec* codec = avcodec_find_encoder_by_name(codec_name);
-	if (codec == NULL) {
-		guacenc_log(GUAC_LOG_ERROR, "Installed version of ffmpeg does not support codec \"%s\".",
-				codec_name);
-		goto fail_codec;
-	}
+    /* Pull codec based on name */
+    AVCodec* codec = avcodec_find_encoder_by_name(codec_name);
+    if (codec == NULL) {
+        guacenc_log(GUAC_LOG_ERROR, "Installed version of ffmpeg does not support codec \"%s\".",
+                codec_name);
+        goto fail_codec;
+    }
 
-	/* create stream */
-	video_stream = NULL;
-	video_stream = avformat_new_stream(container_format_context, codec);
-	if (!video_stream) {
-		guacenc_log(GUAC_LOG_ERROR, "Could not allocate encoder stream. Cannot continue.\n");
-		goto fail_format_context;
-	}
-	video_stream->id = container_format_context->nb_streams - 1;
+    /* create stream */
+    video_stream = NULL;
+    video_stream = avformat_new_stream(container_format_context, codec);
+    if (!video_stream) {
+        guacenc_log(GUAC_LOG_ERROR, "Could not allocate encoder stream. Cannot continue.\n");
+        goto fail_format_context;
+    }
+    video_stream->id = container_format_context->nb_streams - 1;
 
-	video_stream->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
-	video_stream->codec->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
-
-	av_dump_format(container_format_context, 0, path, 1);
+    video_stream->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
+    video_stream->codec->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
 
 
 
-	/* Retrieve encoding context */
-	AVCodecContext* avcodec_context = video_stream->codec;
-	if (avcodec_context == NULL) {
-		guacenc_log(GUAC_LOG_ERROR, "Failed to allocate context for "
-				"codec \"%s\".", codec_name);
-		goto fail_context;
-	}
+
+    /* Retrieve encoding context */
+    AVCodecContext* avcodec_context = video_stream->codec;
+    if (avcodec_context == NULL) {
+        guacenc_log(GUAC_LOG_ERROR, "Failed to allocate context for "
+                "codec \"%s\".", codec_name);
+        goto fail_context;
+    }
 
 
     /* Init context with encoding parameters */
@@ -114,7 +113,7 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     avcodec_context->pix_fmt = AV_PIX_FMT_YUV420P;
 
     if (container_format_context->oformat->flags & AVFMT_GLOBALHEADER) {
-    	avcodec_context->flags |= CODEC_FLAG_GLOBAL_HEADER;
+        avcodec_context->flags |= CODEC_FLAG_GLOBAL_HEADER;
     }
 
     /* Open codec for use */
@@ -136,23 +135,23 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
 
     /* Allocate actual backing data for frame */
     if (av_image_alloc(frame->data, frame->linesize, frame->width,
-                frame->height, frame->format, 32) < 0) {
+            frame->height, frame->format, 32) < 0) {
         goto fail_frame_data;
     }
 
     /* open the output file, if the container needs it */
     if (!(container_format->flags & AVFMT_NOFILE)) {
-    	ret = avio_open(&container_format_context->pb, path, AVIO_FLAG_WRITE);
-    	if (ret < 0) {
-    		guacenc_log(GUAC_LOG_ERROR, "Error occurred while opening output file\n");
-    		goto fail_output_avio;
-    	}
+        ret = avio_open(&container_format_context->pb, path, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            guacenc_log(GUAC_LOG_ERROR, "Error occurred while opening output file\n");
+            goto fail_output_avio;
+        }
     }
 
     /* write the stream header, if needed */
     ret = avformat_write_header(container_format_context, NULL);
     if (ret < 0) {
-    	guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header\n");
+        guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header\n");
     }
 
     /* Allocate video structure */
@@ -192,7 +191,7 @@ fail_codec_open:
     avcodec_free_context(&avcodec_context);
 
 fail_format_context:
-	avformat_free_context(container_format_context);
+    avformat_free_context(container_format_context);
 
 fail_context:
 fail_codec:
@@ -266,7 +265,7 @@ int guacenc_video_advance_timeline(guacenc_video* video,
 
         /* Calculate the number of frames that should have been written */
         int elapsed = (timestamp - video->last_timestamp)
-                    * GUACENC_VIDEO_FRAMERATE / 1000;
+                            * GUACENC_VIDEO_FRAMERATE / 1000;
 
         /* Keep previous timestamp if insufficient time has elapsed */
         if (elapsed == 0)
@@ -274,7 +273,7 @@ int guacenc_video_advance_timeline(guacenc_video* video,
 
         /* Use frame time as last_timestamp */
         next_timestamp = video->last_timestamp
-                        + elapsed * 1000 / GUACENC_VIDEO_FRAMERATE;
+                + elapsed * 1000 / GUACENC_VIDEO_FRAMERATE;
 
         /* Flush frames to bring timeline in sync, duplicating if necessary */
         do {
@@ -337,7 +336,7 @@ static AVFrame* guacenc_video_frame_convert(guacenc_buffer* buffer, int lsize,
 
     /* Allocate actual backing data for frame */
     if (av_image_alloc(frame->data, frame->linesize, frame->width,
-                frame->height, frame->format, 32) < 0) {
+            frame->height, frame->format, 32) < 0) {
         av_frame_free(&frame);
         return NULL;
     }
@@ -426,7 +425,7 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer) {
     if (scaled_width <= dst->width) {
         lsize = 0;
         psize = (dst->width - scaled_width)
-               * buffer->height / dst->height / 2;
+                       * buffer->height / dst->height / 2;
     }
 
     /* If width-based scaling results in a fit width, add letterboxes */
@@ -434,7 +433,7 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer) {
         assert(scaled_height <= dst->height);
         psize = 0;
         lsize = (dst->height - scaled_height)
-               * buffer->width / dst->width / 2;
+                       * buffer->width / dst->width / 2;
     }
 
     /* Prepare source frame for buffer */
@@ -493,26 +492,26 @@ int guacenc_video_free(guacenc_video* video) {
 
     /* write trailer, if needed */
     if (video->container_format_context != NULL &&
-    		video->output_stream != NULL) {
-    	guacenc_log(GUAC_LOG_INFO, "%d\n", av_write_trailer(video->container_format_context));
+            video->output_stream != NULL) {
+        guacenc_log(GUAC_LOG_INFO, "%d\n", av_write_trailer(video->container_format_context));
     }
 
     /* File is now completely written */
     if (video->container_format_context != NULL) {
-    	avio_close(video->container_format_context->pb);
+        avio_close(video->container_format_context->pb);
     }
 
     /* Free frame encoding data */
     if (&video->next_frame != NULL) {
-    	av_freep(&video->next_frame->data[0]);
-    	av_frame_free(&video->next_frame);
+        av_freep(&video->next_frame->data[0]);
+        av_frame_free(&video->next_frame);
     }
 
 
     /* Clean up encoding context */
     if (video->context != NULL) {
-    	avcodec_close(video->context);
-    	avcodec_free_context(&(video->context));
+        avcodec_close(video->context);
+        avcodec_free_context(&(video->context));
     }
 
     free(video);
