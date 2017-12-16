@@ -163,7 +163,7 @@ int guacenc_avcodec_encode_video(guacenc_video* video, AVFrame* frame) {
         if (packet.dts != AV_NOPTS_VALUE) {
             packet.dts = av_rescale_q(packet.dts, video->output_stream->codec->time_base, video->output_stream->time_base);
         }
-        guacenc_write_packet(video, &packet, packet.size);
+        guacenc_write_packet(video, (void*) &packet, packet.size);
         av_packet_unref(&packet);
     }
 #else
@@ -189,7 +189,7 @@ int guacenc_avcodec_encode_video(guacenc_video* video, AVFrame* frame) {
         got_data = 1;
 
         /* Attempt to write data to output file */
-        guacenc_write_packet(video, packet, packet.size);
+        guacenc_write_packet(video, (void*) &packet, packet.size);
         av_packet_unref(&packet);
 
     }
@@ -205,3 +205,48 @@ int guacenc_avcodec_encode_video(guacenc_video* video, AVFrame* frame) {
 #endif
 }
 
+AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
+        AVCodec* codec,
+        int bitrate,
+        int width,
+        int height,
+        int gop_size,
+        int qmax,
+        int qmin,
+        int pix_fmt,
+        AVRational time_base) {
+#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(57, 33, 100)
+    stream->codec->bit_rate = bitrate;
+    stream->codec->width = width;
+    stream->codec->height = height;
+    stream->codec->gop_size = gop_size;
+    stream->codec->qmax = qmax;
+    stream->codec->qmin = qmin;
+    stream->codec->pix_fmt = pix_fmt;
+#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(55, 44, 100)
+    stream->codec->time_base = time_base;
+#else
+    stream->time_base = time_base;
+#endif
+    return stream->codec;
+#else
+    AVCodecContext* context = avcodec_alloc_context3(codec);
+    if (context) {
+        context->bit_rate = bitrate;
+        context->width = width;
+        context->height = height;
+        context->gop_size = gop_size;
+        context->qmax = qmax;
+        context->qmin = qmin;
+        context->pix_fmt = pix_fmt;
+        context->time_base = time_base;
+        avcodec_parameters_from_context(stream->codecpar, context);
+    }
+    return context;
+
+
+    avcodec_parameters_from_context(stream->codecpar, context);
+    return context;
+#endif
+
+}

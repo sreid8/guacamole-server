@@ -88,29 +88,23 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     }
     video_stream->id = container_format_context->nb_streams - 1;
 
-    video_stream->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
-    video_stream->codec->time_base = (AVRational) { 1, GUACENC_VIDEO_FRAMERATE };
-
-
-
-
     /* Retrieve encoding context */
-    AVCodecContext* avcodec_context = video_stream->codec;
+    AVCodecContext* avcodec_context =
+    		guacenc_build_avcodeccontext(video_stream,
+    		        codec,
+    		        bitrate,
+    		        width,
+    		        height,
+    		        /*gop_size*/ 10,
+    		        /*qmax*/ 31,
+    		        /*qmin*/ 2,
+    		        /*pix fmt*/ AV_PIX_FMT_YUV420P,
+    		        /*time base*/ (AVRational) { 1, GUACENC_VIDEO_FRAMERATE });
     if (avcodec_context == NULL) {
         guacenc_log(GUAC_LOG_ERROR, "Failed to allocate context for "
                 "codec \"%s\".", codec_name);
         goto fail_context;
     }
-
-
-    /* Init context with encoding parameters */
-    avcodec_context->bit_rate = bitrate;
-    avcodec_context->width = width;
-    avcodec_context->height = height;
-    avcodec_context->gop_size = 10;
-    avcodec_context->qmax = 31;
-    avcodec_context->qmin = 2;
-    avcodec_context->pix_fmt = AV_PIX_FMT_YUV420P;
 
     if (container_format_context->oformat->flags & AVFMT_GLOBALHEADER) {
         avcodec_context->flags |= CODEC_FLAG_GLOBAL_HEADER;
@@ -480,10 +474,6 @@ int guacenc_video_free(guacenc_video* video) {
     /* Write final frame */
     guacenc_video_flush_frame(video);
 
-    /* Init video packet for final flush of encoded data */
-    AVPacket packet;
-    av_init_packet(&packet);
-
     /* Flush any unwritten frames */
     int retval;
     do {
@@ -493,7 +483,9 @@ int guacenc_video_free(guacenc_video* video) {
     /* write trailer, if needed */
     if (video->container_format_context != NULL &&
             video->output_stream != NULL) {
-        guacenc_log(GUAC_LOG_INFO, "%d\n", av_write_trailer(video->container_format_context));
+        guacenc_log(GUAC_LOG_DEBUG, "Writing trailer: %d\n",
+                av_write_trailer(video->container_format_context) == 0 ?
+                        "success" : "failure");
     }
 
     /* File is now completely written */

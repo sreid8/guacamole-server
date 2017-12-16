@@ -78,5 +78,51 @@
  */
 int guacenc_avcodec_encode_video(guacenc_video* video, AVFrame* frame);
 
+/**
+ * Creates and sets up the AVCodecContext for the appropriate version
+ * of libavformat installed
+ *
+ * @param stream
+ *     The open AVStream
+ *
+ * @param codec
+ *     The codec used on the AVStream
+ *
+ * @param bitrate
+ *     The target bitrate for the encoded video
+ *
+ * @param width
+ *     The target width for the encoded video
+ *
+ * @param height
+ *     The target width for the encoded video
+ *
+ * @param gop_size
+ *     The size of the Group of Pictures
+ *
+ * @param qmax
+ *     The max value of the quantizer
+ *
+ * @param qmin
+ *     The min value of the quantizer
+ *
+ * @param pix_fmt
+ *     The target pixel format for the encoded video
+ *
+ * @param time_base
+ *     The target time base for the encoded video
+ *
+ */
+AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
+		AVCodec* codec,
+		int bitrate,
+		int width,
+		int height,
+		int gop_size,
+		int qmax,
+		int qmin,
+		int pix_fmt,
+		AVRational time_base);
+
 #endif
 
