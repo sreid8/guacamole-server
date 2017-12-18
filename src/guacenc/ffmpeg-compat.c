@@ -223,6 +223,7 @@ AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
     stream->codec->qmax = qmax;
     stream->codec->qmin = qmin;
     stream->codec->pix_fmt = pix_fmt;
+    stream->codec->time_base = time_base;
 #if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(55, 44, 100)
     stream->codec->time_base = time_base;
 #else
