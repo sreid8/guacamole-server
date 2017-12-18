@@ -158,12 +158,6 @@ int guacenc_avcodec_encode_video(guacenc_video* video, AVFrame* frame) {
 
     /* Write corresponding data to file */
     if (got_data) {
-        if (packet.pts != AV_NOPTS_VALUE) {
-            packet.pts = av_rescale_q(packet.pts, video->output_stream->codec->time_base, video->output_stream->time_base);
-        }
-        if (packet.dts != AV_NOPTS_VALUE) {
-            packet.dts = av_rescale_q(packet.dts, video->output_stream->codec->time_base, video->output_stream->time_base);
-        }
         guacenc_write_packet(video, (void*) &packet, packet.size);
         av_packet_unref(&packet);
     }
