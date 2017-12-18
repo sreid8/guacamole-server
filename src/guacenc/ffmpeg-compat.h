@@ -145,7 +145,7 @@ AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
  * @return zero on success, a negative value on error
  */
 int guacenc_open_avcodec(AVCodecContext *avcodec_context,
-        const AVCodec *codec, AVDictionary **options,
+        AVCodec *codec, AVDictionary **options,
         AVStream* stream);
 
 #endif
