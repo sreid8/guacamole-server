@@ -111,7 +111,7 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     }
 
     /* Open codec for use */
-    if (avcodec_open2(avcodec_context, codec, NULL) < 0) {
+    if (guacenc_open_avcodec(avcodec_context, codec, NULL, video_stream) < 0) {
         guacenc_log(GUAC_LOG_ERROR, "Failed to open codec \"%s\".", codec_name);
         goto fail_codec_open;
     }

@@ -79,6 +79,7 @@ static int guacenc_write_packet(guacenc_video* video, void* data, int size) {
 #else
     /* we know data is already a packet if we're using a newer libavcodec */
     pkt = (AVPacket*) data;
+    av_packet_rescale_ts(pkt, video->context->time_base, video->output_stream->time_base);
     pkt->stream_index = video->output_stream->index;
     ret = av_interleaved_write_frame(video->container_format_context, pkt);
 #endif
@@ -241,13 +242,26 @@ AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
         context->qmin = qmin;
         context->pix_fmt = pix_fmt;
         context->time_base = time_base;
-        avcodec_parameters_from_context(stream->codecpar, context);
+        stream->time_base = time_base;
     }
-    return context;
-
-
-    avcodec_parameters_from_context(stream->codecpar, context);
     return context;
 #endif
 
+}
+
+int guacenc_open_avcodec(AVCodecContext *avcodec_context,
+        const AVCodec *codec, AVDictionary **options,
+        AVStream* stream) {
+    int ret = 0;
+    ret = avcodec_open2(avcodec_context, codec, options);
+#if LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(57, 33, 100)
+    int codecpar_ret = 0;
+    /* copy stream parameters to the muxer */
+    codecpar_ret = avcodec_parameters_from_context(stream->codecpar,
+            avcodec_context);
+    if (codecpar_ret < 0) {
+        return codecpar_ret;
+    }
+#endif
+    return ret;
 }

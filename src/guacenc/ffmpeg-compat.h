@@ -124,5 +124,29 @@ AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
 		int pix_fmt,
 		AVRational time_base);
 
+/**
+ * A wrapper for avcodec_open2(). Because libavformat ver
+ * 57.33.100 and greater use stream->codecpar rather than
+ * stream->codec to handle information to the codec,
+ * there needs to be an additional step in that version.
+ * So this wrapper handles that. Otherwise, it's the
+ * same as avcodec_open2().
+ *
+ * @param avcodec_context The context to initialize.
+ * @param codec The codec to open this context for. If a non-NULL codec has been
+ *              previously passed to avcodec_alloc_context3() or
+ *              for this context, then this parameter MUST be either NULL or
+ *              equal to the previously passed codec.
+ * @param options A dictionary filled with AVCodecContext and codec-private options.
+ *                On return this object will be filled with options that were not found.
+ * @param stream The stream for the codec context.
+ *               Only used in libavformat >= 57.33.100. Can be NULL in lower vers
+ *
+ * @return zero on success, a negative value on error
+ */
+int guacenc_open_avcodec(AVCodecContext *avcodec_context,
+        const AVCodec *codec, AVDictionary **options,
+        AVStream* stream);
+
 #endif
 
