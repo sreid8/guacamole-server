@@ -111,7 +111,6 @@ int main(int argc, char* argv[]) {
     av_register_all();
 
 
-
     guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
             "and %i bps.", width, height, bitrate);
 

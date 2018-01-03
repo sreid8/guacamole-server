@@ -45,11 +45,17 @@
 #define GUACENC_DEFAULT_BITRATE 2000000
 
 /**
+<<<<<<< HEAD
  * The allowed codecs for guacenc. More might work, but these are the ones that
  * have been confirmed to work properly
  */
 
 #define GUACENC_ALLOWED_CODECS "libx264", "libx265", "libvpx", "mpeg4"
+
+ /**
+ * The default file name guacenc will use if stdin is used as input
+ */
+#define GUACENC_DEFAULT_FILENAME "output"
 
 /**
  * The default log level below which no messages should be logged.
