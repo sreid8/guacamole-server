@@ -21,6 +21,7 @@
 #define GUACENC_H
 
 #include "config.h"
+#include <stdbool.h>
 
 #include <guacamole/client.h>
 
@@ -45,7 +46,6 @@
 #define GUACENC_DEFAULT_BITRATE 2000000
 
 /**
-<<<<<<< HEAD
  * The allowed codecs for guacenc. More might work, but these are the ones that
  * have been confirmed to work properly
  */
@@ -61,6 +61,62 @@
  * The default log level below which no messages should be logged.
  */
 #define GUACENC_DEFAULT_LOG_LEVEL GUAC_LOG_INFO
+
+/**
+ * Runs guacenc in the legacy batch mode
+ *
+ * @param width
+ *     The width of the resulting video
+ *
+ * @param height
+ *     The height of the resulting video
+ *
+ * @param bitrate
+ *     The bitrate of the resulting video
+ *
+ * @param argc
+ *     The argument count that guacenc was started with
+ *
+ * @param argv
+ *     The argument vector that guacenc was started with
+ *
+ * @param optind
+ *     The index at which the name of the input files starts
+ *     in argv
+ *
+ * @param force
+ *     Force encoding even files cannot be locked
+ */
+int guacenc_batch_mode(int width, int height, int bitrate,
+        int argc, char* argv[], int optind,
+        bool force);
+
+/**
+ * Runs guacenc with a single input file and a single output file
+ *
+ * @param width
+ *     The width of the resulting video
+ *
+ * @param height
+ *     The height of the resulting video
+ *
+ * @param bitrate
+ *     The bitrate of the resulting video
+ *
+ * @param input
+ *     The input file to be encoded
+ *
+ * @param output
+ *     The path and name for the resulting encoded video file
+ *
+ * @param codec
+ *     The codec the resulting video should use
+ *
+ * @param force
+ *     Force encoding even files cannot be locked
+ */
+int guacenc_inout_mode(int width, int height, int bitrate,
+        char* input, char* output, char* codec, bool force);
 
 /**
  * Determines if a codec requested as a command line argument is allowed

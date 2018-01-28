@@ -28,7 +28,6 @@
 #include <libavformat/avformat.h>
 
 #include <getopt.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -91,6 +90,10 @@ int main(int argc, char* argv[]) {
             "version " VERSION);
 
 
+    if (input == NULL && output == NULL) {
+        return guacenc_batch_mode(width, height, bitrate, argc, argv, optind, force);
+    }
+
     if (allowed_codec(codec) < 0) {
         goto invalid_codec;
     }
@@ -104,6 +107,109 @@ int main(int argc, char* argv[]) {
         guacenc_log(GUAC_LOG_ERROR, "No output file specified. Cannot continue.");
     }
 
+    return guacenc_inout_mode(width, height, bitrate, input, output, codec, force);
+
+    /* Display usage and exit with error if options are invalid */
+    invalid_options:
+
+    fprintf(stderr, "USAGE: \n"
+            " BATCH MODE:\n"
+            " %s"
+            " [-s WIDTHxHEIGHT]"
+            " [-r BITRATE]"
+            " [-f]"
+            " [FILE]...\n\n"
+            " SINGLE FILE MODE:\n"
+            " %s"
+            " [-s WIDTHxHEIGHT]"
+            " [-r BITRATE]"
+            " [-i INPUT_FILE]"
+            " [-o OUTPUT_FILE]"
+            " [-c FFMPEG_CODEC]"
+            " [-f]\n"
+            , argv[0], argv[0]);
+
+
+    return 1;
+
+    invalid_codec:
+
+    error_codecs();
+    return 1;
+
+}
+
+int guacenc_batch_mode(int width, int height, int bitrate,
+        int argc, char* argv[], int optind,
+        bool force) {
+
+    int i;
+
+    /* Prepare libavcodec */
+    avcodec_register_all();
+
+    /* Prepare libavformat */
+    av_register_all();
+
+    /* Track total number of failures */
+    int total_files = argc - optind;
+    int failures = 0;
+
+    /* Abort if no files given */
+    if (total_files <= 0) {
+        guacenc_log(GUAC_LOG_INFO, "No input files specified. Nothing to do.");
+        return 0;
+    }
+
+    guacenc_log(GUAC_LOG_INFO, "%i input file(s) provided.", total_files);
+
+    guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
+            "and %i bps.", width, height, bitrate);
+
+    /* Encode all input files */
+    for (i = optind; i < argc; i++) {
+
+        /* Get current filename */
+        const char* path = argv[i];
+
+        /* Generate output filename */
+        char out_path[4096];
+        int len = snprintf(out_path, sizeof(out_path), "%s.m4v", path);
+
+        /* Do not write if filename exceeds maximum length */
+        if (len >= sizeof(out_path)) {
+            guacenc_log(GUAC_LOG_ERROR, "Cannot write output file for \"%s\": "
+                    "Name too long", path);
+            continue;
+        }
+
+        /* Attempt encoding, log granular success/failure at debug level */
+        if (guacenc_encode(path, out_path, "mpeg4",
+                width, height, bitrate, force)) {
+            failures++;
+            guacenc_log(GUAC_LOG_DEBUG,
+                    "%s was NOT successfully encoded.", path);
+        }
+        else
+            guacenc_log(GUAC_LOG_DEBUG, "%s was successfully encoded.", path);
+
+    }
+
+    /* Warn if at least one file failed */
+    if (failures != 0)
+        guacenc_log(GUAC_LOG_WARNING, "Encoding failed for %i of %i file(s).",
+                failures, total_files);
+
+    /* Notify of success */
+    else
+        guacenc_log(GUAC_LOG_INFO, "All files encoded successfully.");
+
+    /* Encoding complete */
+    return 0;
+}
+
+int guacenc_inout_mode(int width, int height, int bitrate,
+        char* input, char* output, char* codec, bool force) {
     /* Prepare libavcodec */
     avcodec_register_all();
 
@@ -134,26 +240,6 @@ int main(int argc, char* argv[]) {
 
     /* Encoding complete */
     return 0;
-
-    /* Display usage and exit with error if options are invalid */
-    invalid_options:
-
-    fprintf(stderr, "USAGE: %s"
-            " [-s WIDTHxHEIGHT]"
-            " [-r BITRATE]"
-            " [-i INPUT_FILE]"
-            " [-o OUTPUT FILE]"
-            " [-c FFMPEG-CODEC]"
-            " [-f]"
-            , argv[0]);
-
-    return 1;
-
-    invalid_codec:
-
-    error_codecs();
-    return 1;
-
 }
 
 int allowed_codec(char* codec) {
