@@ -45,7 +45,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
+guacenc_video* guacenc_video_alloc(char* path, char* codec_name,
         int width, int height, int bitrate) {
 
 
@@ -54,11 +54,21 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     AVStream *video_stream;
     int ret;
 
+    /* should use default codec because container was incorrect*/
+    int failed_container = false;
+
+
     /* allocate the output media context */
     avformat_alloc_output_context2(&container_format_context, NULL, NULL, path);
     if (!container_format_context) {
-        guacenc_log(GUAC_LOG_INFO, "Unable to determine container format from filename, using MPEG4.\n");
-        avformat_alloc_output_context2(&container_format_context, NULL, "mpeg4", path);
+        guacenc_log(GUAC_LOG_INFO, "Unable to determine container format from filename, using m4v. "
+                "This will change codec choice to mpeg4 and will add \".m4v\" to the end of the "
+                "output file name.");
+        avformat_alloc_output_context2(&container_format_context, NULL, NULL, strcat(path,".m4v"));
+        failed_container = true;
+    }
+    if (-1 == allowed_container_format(container_format_context->oformat->name)) {
+        goto fail_container;
     }
     else {
         guacenc_log(GUAC_LOG_INFO, "Using container %s\n", container_format_context->oformat->name);
@@ -71,12 +81,22 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
 
     container_format = container_format_context->oformat;
 
+    AVCodec* codec = NULL;
     /* Pull codec based on name */
-    AVCodec* codec = avcodec_find_encoder_by_name(codec_name);
-    if (codec == NULL) {
-        guacenc_log(GUAC_LOG_ERROR, "Installed version of ffmpeg does not support codec \"%s\".",
-                codec_name);
-        goto fail_codec;
+    if (!failed_container) {
+        codec = avcodec_find_encoder_by_name(codec_name);
+        if (codec == NULL) {
+            guacenc_log(GUAC_LOG_ERROR, "Installed version of ffmpeg does not support codec \"%s\".",
+                    codec_name);
+            goto fail_codec;
+        }
+    } else {
+        codec = avcodec_find_encoder_by_name("mpeg4");
+        if (codec == NULL) {
+            guacenc_log(GUAC_LOG_ERROR, "Installed version of ffmpeg does not support codec \"%s\".",
+                    "mpeg4");
+            goto fail_codec;
+        }
     }
 
     /* create stream */
@@ -187,6 +207,10 @@ fail_codec_open:
 fail_format_context:
     avformat_free_context(container_format_context);
 
+fail_container:
+    fprintf(stderr,
+            "ERROR: unsupported container format specified: %s\n",
+            container_format_context->oformat->name);
 fail_context:
 fail_codec:
     return NULL;
@@ -509,5 +533,18 @@ int guacenc_video_free(guacenc_video* video) {
     free(video);
     return 0;
 
+}
+
+int allowed_container_format(const char* format) {
+    char* allowed_conatiners[] = { GUACENC_ALLOWED_CONTAINERS };
+    int size = sizeof(allowed_conatiners) / sizeof(allowed_conatiners[0]);
+    int i;
+
+    for (i = 0; i < size; i++) {
+        if (strcmp(format, allowed_conatiners[i]) == 0) {
+            return 0;
+        }
+    }
+    return -1;
 }
 

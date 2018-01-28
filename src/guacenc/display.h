@@ -147,7 +147,7 @@ int guacenc_display_flatten(guacenc_display* display);
  *     The newly-allocated Guacamole video encoder display, or NULL if the
  *     display could not be allocated.
  */
-guacenc_display* guacenc_display_alloc(const char* path, const char* codec,
+guacenc_display* guacenc_display_alloc(char* path, char* codec,
         int width, int height, int bitrate);
 
 /**

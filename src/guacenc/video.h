@@ -39,6 +39,8 @@
  */
 #define GUACENC_VIDEO_FRAMERATE 25
 
+#define GUACENC_ALLOWED_CONTAINERS "mp4", "webm", "m4v", "ipod"
+
 /**
  * A video which is actively being encoded. Frames can be added to the video
  * as they are generated, along with their associated timestamps, and the
@@ -124,7 +126,7 @@ typedef struct guacenc_video {
  *     The desired overall bitrate of the resulting encoded video, in bits per
  *     second.
  */
-guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
+guacenc_video* guacenc_video_alloc(char* path, char* codec_name,
         int width, int height, int bitrate);
 
 /**
@@ -185,6 +187,8 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer);
  *     video could not be written due to an error.
  */
 int guacenc_video_free(guacenc_video* video);
+
+int allowed_container_format(const char* format);
 
 #endif
 

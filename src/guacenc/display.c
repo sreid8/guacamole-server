@@ -82,7 +82,7 @@ cairo_operator_t guacenc_display_cairo_operator(guac_composite_mode mask) {
 
 }
 
-guacenc_display* guacenc_display_alloc(const char* path, const char* codec,
+guacenc_display* guacenc_display_alloc(char* path, char* codec,
         int width, int height, int bitrate) {
 
     /* Prepare video encoding */

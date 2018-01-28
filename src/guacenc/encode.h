@@ -58,7 +58,7 @@
  *     Zero on success, non-zero if an error prevented successful encoding of
  *     the video.
  */
-int guacenc_encode(const char* path, const char* out_path, const char* codec,
+int guacenc_encode(const char* path, char* out_path, char* codec,
         int width, int height, int bitrate, bool force);
 
 #endif
