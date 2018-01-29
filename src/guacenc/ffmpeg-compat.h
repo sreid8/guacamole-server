@@ -133,14 +133,16 @@ AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
  * same as avcodec_open2().
  *
  * @param avcodec_context The context to initialize.
- * @param codec The codec to open this context for. If a non-NULL codec has been
- *              previously passed to avcodec_alloc_context3() or
+ * @param codec The codec to open this context for. If a non-NULL codec has
+ *              been previously passed to avcodec_alloc_context3() or
  *              for this context, then this parameter MUST be either NULL or
  *              equal to the previously passed codec.
- * @param options A dictionary filled with AVCodecContext and codec-private options.
- *                On return this object will be filled with options that were not found.
+ * @param options A dictionary filled with AVCodecContext and codec-private
+ *                options. On return this object will be filled with options
+ *                that were not found.
  * @param stream The stream for the codec context.
- *               Only used in libavformat >= 57.33.100. Can be NULL in lower vers
+ *               Only used in libavformat >= 57.33.100. Can be NULL in
+ *               lower versions
  *
  * @return zero on success, a negative value on error
  */

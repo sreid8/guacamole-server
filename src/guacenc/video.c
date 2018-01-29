@@ -54,8 +54,12 @@ guacenc_video* guacenc_video_alloc(char* path, char* codec_name,
     AVStream *video_stream;
     int ret;
 
+
     /* should use default codec because container was incorrect*/
     int failed_container = false;
+
+    /* if the header couldn't be written to a codec mismatch, handle gracefully */
+    int failed_header = false;
 
 
     /* allocate the output media context */
@@ -67,7 +71,7 @@ guacenc_video* guacenc_video_alloc(char* path, char* codec_name,
         avformat_alloc_output_context2(&container_format_context, NULL, NULL, strcat(path,".m4v"));
         failed_container = true;
     }
-    if (-1 == allowed_container_format(container_format_context->oformat->name)) {
+    if (-1 == guacenc_allowed_container_format(container_format_context->oformat->name)) {
         goto fail_container;
     }
     else {
@@ -166,6 +170,7 @@ guacenc_video* guacenc_video_alloc(char* path, char* codec_name,
     ret = avformat_write_header(container_format_context, NULL);
     if (ret < 0) {
         guacenc_log(GUAC_LOG_ERROR, "Error occurred while writing output file header\n");
+        failed_header = true;
     }
 
     /* Allocate video structure */
@@ -187,12 +192,23 @@ guacenc_video* guacenc_video_alloc(char* path, char* codec_name,
     video->last_timestamp = 0;
     video->next_pts = 0;
 
+    /* gracefully clean up if header failed */
+    if (failed_header) {
+        guacenc_log(GUAC_LOG_ERROR, "An incompatible codec/container "
+                "combination was specified. Cannot encode.\n");
+        goto fail_output_file;
+    }
+
     return video;
 
     /* Free all allocated data in case of failure */
 
 fail_output_file:
     avio_close(container_format_context->pb);
+    /* delete the file that was created if it was actually created */
+    if (access(path, F_OK) != -1) {
+        remove(path);
+    }
 
 fail_output_avio:
     av_freep(&frame->data[0]);
@@ -205,12 +221,18 @@ fail_codec_open:
     avcodec_free_context(&avcodec_context);
 
 fail_format_context:
-    avformat_free_context(container_format_context);
+    /* failing to write the container implicitly frees the context */
+    if (!failed_header) {
+        avformat_free_context(container_format_context);
+    }
 
 fail_container:
-    fprintf(stderr,
-            "ERROR: unsupported container format specified: %s\n",
-            container_format_context->oformat->name);
+    /* failing to write the container don't guarantee that the container isn't supported at all */
+    if (!failed_header) {
+        fprintf(stderr,
+                "ERROR: unsupported container format specified: %s\n",
+                container_format_context->oformat->name);
+    }
 fail_context:
 fail_codec:
     return NULL;
@@ -535,7 +557,7 @@ int guacenc_video_free(guacenc_video* video) {
 
 }
 
-int allowed_container_format(const char* format) {
+int guacenc_allowed_container_format(const char* format) {
     char* allowed_conatiners[] = { GUACENC_ALLOWED_CONTAINERS };
     int size = sizeof(allowed_conatiners) / sizeof(allowed_conatiners[0]);
     int i;
@@ -547,4 +569,5 @@ int allowed_container_format(const char* format) {
     }
     return -1;
 }
+
 

@@ -39,6 +39,10 @@
  */
 #define GUACENC_VIDEO_FRAMERATE 25
 
+/**
+ * The list of tested containers that guacenc is compatible with. There may
+ * be more and they can be added once they've been tested.
+ */
 #define GUACENC_ALLOWED_CONTAINERS "mp4", "webm", "m4v", "ipod"
 
 /**
@@ -61,8 +65,8 @@ typedef struct guacenc_video {
     AVCodecContext* context;
 
     /**
-     * The open format context from libavformat, created for the file container
-     * specified when this guacenc video was created.
+     * The open format context from libavformat, created for the file
+     * container specified when this guacenc video was created.
      */
     AVFormatContext* container_format_context;
 
@@ -188,7 +192,18 @@ void guacenc_video_prepare_frame(guacenc_video* video, guacenc_buffer* buffer);
  */
 int guacenc_video_free(guacenc_video* video);
 
-int allowed_container_format(const char* format);
+/**
+ * Determines if a containter format requested by the output file name is
+ * allowed by guacenc.
+ *
+ * @param format
+ *     The name of the container format
+ *
+ * @return
+ *     0 if allowed, -1 if not allowed
+ */
+int guacenc_allowed_container_format(const char* format);
+
 
 #endif
 
