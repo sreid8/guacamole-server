@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
         guacenc_log(GUAC_LOG_ERROR, "No output file specified. Cannot continue.");
     }
 
+
     /* Prepare libavcodec */
     avcodec_register_all();
 

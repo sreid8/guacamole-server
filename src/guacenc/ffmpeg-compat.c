@@ -211,14 +211,25 @@ AVCodecContext* guacenc_build_avcodeccontext(AVStream* stream,
         int pix_fmt,
         AVRational time_base) {
 #if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(57, 33, 100)
-    stream->codec->bit_rate = bitrate;
-    stream->codec->width = width;
-    stream->codec->height = height;
-    stream->codec->gop_size = gop_size;
-    stream->codec->qmax = qmax;
-    stream->codec->qmin = qmin;
-    stream->codec->pix_fmt = pix_fmt;
-    stream->codec->time_base = time_base;
+//    stream->codec->bit_rate = bitrate;
+//    stream->codec->width = width;
+//    stream->codec->height = height;
+//    stream->codec->gop_size = gop_size;
+//    stream->codec->qmax = qmax;
+//    stream->codec->qmin = qmin;
+//    stream->codec->pix_fmt = pix_fmt;
+//    stream->codec->time_base = time_base;
+	stream->codec->bit_rate = 5000*1000;
+	stream->codec->width = width;
+	stream->codec->height = height;
+	stream->codec->gop_size = 60;
+	stream->codec->pix_fmt = AV_PIX_FMT_YUV420P;
+	stream->codec->bit_rate_tolerance = 0;
+	stream->codec->rc_max_rate = 5000*1000;
+	stream->codec->rc_min_rate = 5000*1000;
+	stream->codec->rc_buffer_size = 5000*1000*2;
+
+	stream->codec->time_base = time_base;
 #if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(55, 44, 100)
     stream->codec->time_base = time_base;
 #else

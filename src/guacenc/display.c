@@ -86,7 +86,8 @@ guacenc_display* guacenc_display_alloc(const char* path, const char* codec,
         int width, int height, int bitrate) {
 
     /* Prepare video encoding */
-    guacenc_video* video = guacenc_video_alloc(path, codec, width, height, bitrate);
+    guacenc_video* video = guacenc_video_alloc(path, codec, width,
+        height, bitrate);
     if (video == NULL)
         return NULL;
 

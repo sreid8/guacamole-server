@@ -98,7 +98,7 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
     		        /*gop_size*/ 10,
     		        /*qmax*/ 31,
     		        /*qmin*/ 2,
-    		        /*pix fmt*/ AV_PIX_FMT_YUV420P,
+    		        /*pix fmt*/  AV_PIX_FMT_YUV420P,
     		        /*time base*/ (AVRational) { 1, GUACENC_VIDEO_FRAMERATE });
     if (avcodec_context == NULL) {
         guacenc_log(GUAC_LOG_ERROR, "Failed to allocate context for "
@@ -110,8 +110,15 @@ guacenc_video* guacenc_video_alloc(const char* path, const char* codec_name,
         avcodec_context->flags |= CODEC_FLAG_GLOBAL_HEADER;
     }
 
+    AVDictionary* opts = NULL;
+    av_dict_set(&opts, "vprofile", "baseline", 0);
+    av_dict_set(&opts, "tune", "zerolatency", 0);
+    av_dict_set(&opts, "preset", "ultrafast", 0);
+    av_dict_set(&opts, "vsync", "cfr", 0);
+    av_dict_set(&opts, "x264-params", "nal-hrd=cbr", 0);
+
     /* Open codec for use */
-    if (guacenc_open_avcodec(avcodec_context, codec, NULL, video_stream) < 0) {
+    if (guacenc_open_avcodec(avcodec_context, codec, &opts, video_stream) < 0) {
         guacenc_log(GUAC_LOG_ERROR, "Failed to open codec \"%s\".", codec_name);
         goto fail_codec_open;
     }
