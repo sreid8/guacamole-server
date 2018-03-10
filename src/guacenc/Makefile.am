@@ -84,6 +84,7 @@ endif
 guacenc_CFLAGS =            \
     -Werror -Wall           \
     @AVCODEC_CFLAGS@        \
+    @AVFORMAT_CFLAGS@       \
     @AVUTIL_CFLAGS@         \
     @LIBGUAC_INCLUDE@       \
     @SWSCALE_CFLAGS@
@@ -91,12 +92,13 @@ guacenc_CFLAGS =            \
 guacenc_LDADD =     \
     @LIBGUAC_LTLIB@
 
-guacenc_LDFLAGS =  \
-    @AVCODEC_LIBS@ \
-    @AVUTIL_LIBS@  \
-    @CAIRO_LIBS@   \
-    @JPEG_LIBS@    \
-    @SWSCALE_LIBS@ \
+guacenc_LDFLAGS =   \
+    @AVCODEC_LIBS@  \
+    @AVFORMAT_LIBS@ \
+    @AVUTIL_LIBS@   \
+    @CAIRO_LIBS@    \
+    @JPEG_LIBS@     \
+    @SWSCALE_LIBS@  \
     @WEBP_LIBS@
 
 EXTRA_DIST =         \

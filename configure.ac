@@ -176,6 +176,24 @@ fi
 AM_CONDITIONAL([ENABLE_AVCODEC], [test "x${have_libavcodec}" = "xyes"])
 
 #
+# libavformat
+#
+
+have_libavformat=disabled
+AC_ARG_WITH([libavformat],
+	    [AS_HELP_STRING([--with-libavformat],
+	                    [use libavformat when encoding video @<:@default=check@:>@])],
+            [].
+            [with_libavformat=check])
+if test "x$with_libavformat" != "xno"
+then
+    have_libavformat=yes
+    PKG_CHECK_MODULES([AVFORMAT], [libavformat],, [have_libavformat=no]);
+fi
+
+AM_CONDITIONAL([ENABLE_AVFORMAT], [test "x${have_libavformat}" = "xyes"])
+
+#
 # libavutil
 #
 
@@ -1186,10 +1204,11 @@ AC_ARG_ENABLE([guacenc],
               [],
               [enable_guacenc=yes])
 
-AM_CONDITIONAL([ENABLE_GUACENC], [test "x${enable_guacenc}"  = "xyes" \
-                                    -a "x${have_libavcodec}" = "xyes" \
-                                    -a "x${have_libavutil}"  = "xyes" \
-                                    -a "x${have_libswscale}" = "xyes"])
+AM_CONDITIONAL([ENABLE_GUACENC], [test "x${enable_guacenc}"   = "xyes" \
+                                    -a "x${have_libavcodec}"  = "xyes" \
+                                    -a "x${have_libavutil}"   = "xyes" \
+                                    -a "x${have_libswscale}"  = "xyes" \
+                                    -a "x${have_libavformat}" = "xyes"])
 
 #
 # guaclog
@@ -1265,6 +1284,7 @@ $PACKAGE_NAME version $PACKAGE_VERSION
      freerdp ............. ${have_freerdp}
      pango ............... ${have_pango}
      libavcodec .......... ${have_libavcodec}
+     libavformat.......... ${have_libavformat}
      libavutil ........... ${have_libavutil}
      libssh2 ............. ${have_libssh2}
      libssl .............. ${have_ssl}
