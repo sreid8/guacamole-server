@@ -31,6 +31,7 @@ FROM centos:${CENTOS_VERSION} AS builder
 # duplicated in an ARG in the second stage of the build.
 #
 ARG PREFIX_DIR=/usr/local/guacamole
+ARG RPM_FUSION_URL=https://download1.rpmfusion.org/free/el/rpmfusion-free-release-7.noarch.rpm
 
 # Build arguments
 ARG BUILD_DIR=/tmp/guacd-docker-BUILD
@@ -50,7 +51,8 @@ ARG BUILD_DEPENDENCIES="              \
         make                          \
         pango-devel                   \
         pulseaudio-libs-devel         \
-        uuid-devel"
+        uuid-devel                    \
+        ffmpeg-devel"
 
 # Build time environment
 ENV LC_ALL=en_US.UTF-8
@@ -58,6 +60,7 @@ ENV LC_ALL=en_US.UTF-8
 # Bring build environment up to date and install build dependencies
 RUN yum -y update                        && \
     yum -y install epel-release          && \
+    yum -y install $RPM_FUSION_URL       && \
     yum -y install $BUILD_DEPENDENCIES   && \
     yum clean all
 
@@ -79,6 +82,7 @@ FROM centos:${CENTOS_VERSION}
 # CMD directive at the end of this build stage.
 #
 ARG PREFIX_DIR=/usr/local/guacamole
+ARG RPM_FUSION_URL=https://download1.rpmfusion.org/free/el/rpmfusion-free-release-7.noarch.rpm
 
 # Runtime environment
 ENV LC_ALL=en_US.UTF-8
@@ -99,11 +103,13 @@ ARG RUNTIME_DEPENDENCIES="            \
         pango                         \
         pulseaudio-libs               \
         terminus-fonts                \
-        uuid"
+        uuid                          \
+        ffmpeg"
 
 # Bring runtime environment up to date and install runtime dependencies
 RUN yum -y update                          && \
     yum -y install epel-release            && \
+    yum -y install $RPM_FUSION_URL         && \
     yum -y install $RUNTIME_DEPENDENCIES   && \
     yum clean all                          && \
     rm -rf /var/cache/yum
@@ -126,5 +132,6 @@ EXPOSE 4822
 # Note the path here MUST correspond to the value specified in the 
 # PREFIX_DIR build argument.
 #
-CMD [ "/usr/local/guacamole/sbin/guacd", "-b", "0.0.0.0", "-f" ]
+#CMD [ "/usr/local/guacamole/sbin/guacd", "-b", "0.0.0.0", "-f" ]
+CMD [ "/bin/bash" ]
 
