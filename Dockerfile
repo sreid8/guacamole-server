@@ -124,6 +124,8 @@ RUN FREERDP_DIR=$(dirname \
     mkdir -p "$FREERDP_PLUGIN_DIR" && \
     ln -s "$PREFIX_DIR"/lib/freerdp/*.so "$FREERDP_PLUGIN_DIR"
 
+RUN ln -s "$PREFIX_DIR"/bin/guacenc /usr/local/bin/guacenc
+
 # Expose the default listener port
 EXPOSE 4822
 
