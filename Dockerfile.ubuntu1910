@@ -23,8 +23,8 @@
 
 
 # Use Debian as base for the build
-ARG VERSION=7
-FROM centos:${VERSION} AS builder
+ARG VERSION=19.10
+FROM ubuntu:${VERSION} AS builder
 
 # Base directory for installed build artifacts.
 # Due to limitations of the Docker image build process, this value is
@@ -38,20 +38,20 @@ ARG BUILD_DEPENDENCIES="              \
         autoconf                      \
         automake                      \
         gcc                           \
-        cairo-devel                   \
-        libjpeg-turbo-devel           \
-        uuid-devel                    \
-        pango-devel                   \
+        libcairo2-dev                 \
+        libjpeg-turbo8-dev           \
+        libossp-uuid-dev              \
         libtool                       \
-        libwebp-devel                 \
-        make                          \
-        ffmpeg-devel"
+        libavcodec-dev                \
+        libavformat-dev               \
+        libavutil-dev                 \
+        libswscale-dev                \
+        make"
 
 # Bring build environment up to date and install build dependencies
-RUN yum -y update                          && \
-    yum -y localinstall --nogpgcheck https://download1.rpmfusion.org/free/el/rpmfusion-free-release-7.noarch.rpm https://download1.rpmfusion.org/nonfree/el/rpmfusion-nonfree-release-7.noarch.rpm && \
-    yum -y install $BUILD_DEPENDENCIES     && \
-    yum -y clean all
+RUN apt-get update                         && \
+    apt-get install -y $BUILD_DEPENDENCIES && \
+    rm -rf /var/lib/apt/lists/*
 
 # Add configuration scripts
 COPY src/guacd-docker/bin "${PREFIX_DIR}/bin/"
@@ -69,7 +69,8 @@ RUN ${PREFIX_DIR}/bin/list-dependencies.sh    \
         ${PREFIX_DIR}/lib/freerdp2/guac*.so   \
         > ${PREFIX_DIR}/DEPENDENCIES
 
-FROM centos:${VERSION}
+# Use same Debian as the base for the runtime image
+FROM ubuntu:${VERSION}
 
 # Base directory for installed build artifacts.
 # Due to limitations of the Docker image build process, this value is
@@ -81,7 +82,6 @@ ARG PREFIX_DIR=/usr/local/guacamole
 # Runtime environment
 ENV LC_ALL=C.UTF-8
 ENV LD_LIBRARY_PATH=${PREFIX_DIR}/lib
-ENV GUACD_LOG_LEVEL=info
 
 ARG RUNTIME_DEPENDENCIES="            \
         ca-certificates               \
@@ -89,20 +89,21 @@ ARG RUNTIME_DEPENDENCIES="            \
         fonts-liberation              \
         fonts-dejavu                  \
         xfonts-terminus               \
-        wget                          \
         ffmpeg                        \
-        libwebp                       \
-        uuid" 
+        wget                          \
+        libossp-uuid16                \
+        libwebp6"
 
 # Copy build artifacts into this stage
 COPY --from=builder ${PREFIX_DIR} ${PREFIX_DIR}
 
 # Bring runtime environment up to date and install runtime dependencies
-RUN yum -y update                                           && \
-    yum -y localinstall --nogpgcheck https://download1.rpmfusion.org/free/el/rpmfusion-free-release-7.noarch.rpm https://download1.rpmfusion.org/nonfree/el/rpmfusion-nonfree-release-7.noarch.rpm && \
-    yum -y install $RUNTIME_DEPENDENCIES                    && \
-    yum -y clean all
+RUN apt-get update                                          && \
+    apt-get install -y $RUNTIME_DEPENDENCIES                && \
+    apt-get install -y $(cat "${PREFIX_DIR}"/DEPENDENCIES)  && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /testfile && wget -O /testfile/recording.guac https://github.com/apache/guacamole-client/raw/master/doc/guacamole-playback-example/src/main/webapp/recording.guac && mkdir /output
 
 CMD /bin/bash
+
