@@ -31,6 +31,7 @@
 /* Client plugin arguments */
 const char* GUAC_SSH_CLIENT_ARGS[] = {
     "hostname",
+    "host-key",
     "port",
     "username",
     "password",
@@ -56,6 +57,13 @@ const char* GUAC_SSH_CLIENT_ARGS[] = {
     "create-recording-path",
     "read-only",
     "server-alive-interval",
+    "backspace",
+    "terminal-type",
+    "scrollback",
+    "locale",
+    "timezone",
+    "disable-copy",
+    "disable-paste",
     NULL
 };
 
@@ -65,6 +73,11 @@ enum SSH_ARGS_IDX {
      * The hostname to connect to. Required.
      */
     IDX_HOSTNAME,
+
+    /**
+     * The Base64-encoded public SSH host key.  Optional.
+     */
+    IDX_HOST_KEY,
 
     /**
      * The port to connect to. Optional.
@@ -120,10 +133,12 @@ enum SSH_ARGS_IDX {
 #endif
 
     /**
-     * The name of the color scheme to use. Currently valid color schemes are:
-     * "black-white", "white-black", "gray-black", and "green-black", each
-     * following the "foreground-background" pattern. By default, this will be
-     * "gray-black".
+     * The color scheme to use, as a series of semicolon-separated color-value
+     * pairs: "background: <color>", "foreground: <color>", or
+     * "color<n>: <color>", where <n> is a number from 0 to 255, and <color> is
+     * "color<n>" or an X11 color code (e.g. "aqua" or "rgb:12/34/56").
+     * The color scheme can also be one of the special values: "black-white",
+     * "white-black", "gray-black", or "green-black".
      */
     IDX_COLOR_SCHEME,
 
@@ -209,6 +224,56 @@ enum SSH_ARGS_IDX {
      */
     IDX_SERVER_ALIVE_INTERVAL,
 
+    /**
+     * The ASCII code, as an integer, to send for the backspace key, as configured
+     * by the SSH connection from the client.  By default this will be 127,
+     * the ASCII DELETE code.
+     */
+    IDX_BACKSPACE,
+
+    /**
+     * The terminal emulator type that is passed to the remote system (e.g.
+     * "xterm" or "xterm-256color"). "linux" is used if unspecified.
+     */
+    IDX_TERMINAL_TYPE,
+
+    /**
+     * The maximum size of the scrollback buffer in rows.
+     */
+    IDX_SCROLLBACK,
+
+    /**
+     * The locale that should be forwarded to the remote system via the LANG
+     * environment variable. By default, no locale is forwarded. This setting
+     * will only have an effect if the SSH server allows the LANG environment
+     * variable to be set.
+     */
+    IDX_LOCALE,
+     
+    /**
+     * The timezone that is to be passed to the remote system, via the
+     * TZ environment variable.  By default, no timezone is forwarded
+     * and the timezone of the remote system will be used.  This
+     * setting will only work if the SSH server allows the TZ variable
+     * to be set.  Timezones should be in standard IANA format, see:
+     * https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+     */
+    IDX_TIMEZONE,
+
+    /**
+     * Whether outbound clipboard access should be blocked. If set to "true",
+     * it will not be possible to copy data from the terminal to the client
+     * using the clipboard. By default, clipboard access is not blocked.
+     */
+    IDX_DISABLE_COPY,
+
+    /**
+     * Whether inbound clipboard access should be blocked. If set to "true", it
+     * will not be possible to paste data from the client to the terminal using
+     * the clipboard. By default, clipboard access is not blocked.
+     */
+    IDX_DISABLE_PASTE,
+
     SSH_ARGS_COUNT
 };
 
@@ -230,6 +295,10 @@ guac_ssh_settings* guac_ssh_parse_args(guac_user* user,
         guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
                 IDX_HOSTNAME, "");
 
+    settings->host_key =
+        guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_HOST_KEY, NULL);
+
     settings->username =
         guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
                 IDX_USERNAME, NULL);
@@ -246,6 +315,11 @@ guac_ssh_settings* guac_ssh_parse_args(guac_user* user,
     settings->key_passphrase =
         guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
                 IDX_PASSPHRASE, NULL);
+
+    /* Read maximum scrollback size */
+    settings->max_scrollback =
+        guac_user_parse_args_int(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_SCROLLBACK, GUAC_SSH_DEFAULT_MAX_SCROLLBACK);
 
     /* Read font name */
     settings->font_name =
@@ -348,6 +422,36 @@ guac_ssh_settings* guac_ssh_parse_args(guac_user* user,
         guac_user_parse_args_int(user, GUAC_SSH_CLIENT_ARGS, argv,
                 IDX_SERVER_ALIVE_INTERVAL, 0);
 
+    /* Parse backspace key setting */
+    settings->backspace =
+        guac_user_parse_args_int(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_BACKSPACE, 127);
+
+    /* Read terminal emulator type. */
+    settings->terminal_type =
+        guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_TERMINAL_TYPE, "linux");
+
+    /* Read locale */
+    settings->locale =
+        guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_LOCALE, NULL);
+
+    /* Read the timezone parameter, or use client handshake. */
+    settings->timezone =
+        guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_TIMEZONE, user->info.timezone);
+
+    /* Parse clipboard copy disable flag */
+    settings->disable_copy =
+        guac_user_parse_args_boolean(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_DISABLE_COPY, false);
+
+    /* Parse clipboard paste disable flag */
+    settings->disable_paste =
+        guac_user_parse_args_boolean(user, GUAC_SSH_CLIENT_ARGS, argv,
+                IDX_DISABLE_PASTE, false);
+
     /* Parsing was successful */
     return settings;
 
@@ -357,6 +461,7 @@ void guac_ssh_settings_free(guac_ssh_settings* settings) {
 
     /* Free network connection information */
     free(settings->hostname);
+    free(settings->host_key);
     free(settings->port);
 
     /* Free credentials */
@@ -383,8 +488,16 @@ void guac_ssh_settings_free(guac_ssh_settings* settings) {
     free(settings->recording_name);
     free(settings->recording_path);
 
+    /* Free terminal emulator type. */
+    free(settings->terminal_type);
+
+    /* Free locale */
+    free(settings->locale);
+
+    /* Free the client timezone. */
+    free(settings->timezone);
+
     /* Free overall structure */
     free(settings);
 
 }
-

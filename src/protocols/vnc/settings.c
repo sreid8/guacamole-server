@@ -35,6 +35,7 @@ const char* GUAC_VNC_CLIENT_ARGS[] = {
     "port",
     "read-only",
     "encodings",
+    "username",
     "password",
     "swap-red-blue",
     "color-depth",
@@ -60,6 +61,7 @@ const char* GUAC_VNC_CLIENT_ARGS[] = {
 #ifdef ENABLE_COMMON_SSH
     "enable-sftp",
     "sftp-hostname",
+    "sftp-host-key",
     "sftp-port",
     "sftp-username",
     "sftp-password",
@@ -76,12 +78,13 @@ const char* GUAC_VNC_CLIENT_ARGS[] = {
     "recording-exclude-mouse",
     "recording-include-keys",
     "create-recording-path",
-
+    "disable-copy",
+    "disable-paste",
     NULL
 };
 
 enum VNC_ARGS_IDX {
-
+    
     /**
      * The hostname of the VNC server (or repeater) to connect to.
      */
@@ -106,6 +109,11 @@ enum VNC_ARGS_IDX {
      */
     IDX_ENCODINGS,
 
+    /**
+     * The username to send to the VNC server if authentication is requested.
+     */
+    IDX_USERNAME,
+    
     /**
      * The password to send to the VNC server if authentication is requested.
      */
@@ -195,6 +203,11 @@ enum VNC_ARGS_IDX {
      * hostname of the VNC server will be used.
      */
     IDX_SFTP_HOSTNAME,
+
+    /**
+     * The public SSH host key to identify the SFTP server.
+     */
+    IDX_SFTP_HOST_KEY,
 
     /**
      * The port of the SSH server to connect to for SFTP. If blank, the default
@@ -292,6 +305,20 @@ enum VNC_ARGS_IDX {
      */
     IDX_CREATE_RECORDING_PATH,
 
+    /**
+     * Whether outbound clipboard access should be blocked. If set to "true",
+     * it will not be possible to copy data from the remote desktop to the
+     * client using the clipboard. By default, clipboard access is not blocked.
+     */
+    IDX_DISABLE_COPY,
+
+    /**
+     * Whether inbound clipboard access should be blocked. If set to "true", it
+     * will not be possible to paste data from the client to the remote desktop
+     * using the clipboard. By default, clipboard access is not blocked.
+     */
+    IDX_DISABLE_PASTE,
+
     VNC_ARGS_COUNT
 };
 
@@ -316,10 +343,14 @@ guac_vnc_settings* guac_vnc_parse_args(guac_user* user,
         guac_user_parse_args_int(user, GUAC_VNC_CLIENT_ARGS, argv,
                 IDX_PORT, 0);
 
+    settings->username =
+        guac_user_parse_args_string(user, GUAC_VNC_CLIENT_ARGS, argv,
+                IDX_USERNAME, ""); /* NOTE: freed by libvncclient */
+    
     settings->password =
         guac_user_parse_args_string(user, GUAC_VNC_CLIENT_ARGS, argv,
                 IDX_PASSWORD, ""); /* NOTE: freed by libvncclient */
-
+    
     /* Remote cursor */
     if (strcmp(argv[IDX_CURSOR], "remote") == 0) {
         guac_user_log(user, GUAC_LOG_INFO, "Cursor rendering: remote");
@@ -411,6 +442,11 @@ guac_vnc_settings* guac_vnc_parse_args(guac_user* user,
         guac_user_parse_args_string(user, GUAC_VNC_CLIENT_ARGS, argv,
                 IDX_SFTP_HOSTNAME, settings->hostname);
 
+    /* The public SSH host key. */
+    settings->sftp_host_key =
+        guac_user_parse_args_string(user, GUAC_VNC_CLIENT_ARGS, argv,
+                IDX_SFTP_HOST_KEY, NULL);
+
     /* Port for SFTP connection */
     settings->sftp_port =
         guac_user_parse_args_string(user, GUAC_VNC_CLIENT_ARGS, argv,
@@ -482,6 +518,16 @@ guac_vnc_settings* guac_vnc_parse_args(guac_user* user,
         guac_user_parse_args_boolean(user, GUAC_VNC_CLIENT_ARGS, argv,
                 IDX_CREATE_RECORDING_PATH, false);
 
+    /* Parse clipboard copy disable flag */
+    settings->disable_copy =
+        guac_user_parse_args_boolean(user, GUAC_VNC_CLIENT_ARGS, argv,
+                IDX_DISABLE_COPY, false);
+
+    /* Parse clipboard paste disable flag */
+    settings->disable_paste =
+        guac_user_parse_args_boolean(user, GUAC_VNC_CLIENT_ARGS, argv,
+                IDX_DISABLE_PASTE, false);
+
     return settings;
 
 }
@@ -504,6 +550,7 @@ void guac_vnc_settings_free(guac_vnc_settings* settings) {
     /* Free SFTP settings */
     free(settings->sftp_directory);
     free(settings->sftp_root_directory);
+    free(settings->sftp_host_key);
     free(settings->sftp_hostname);
     free(settings->sftp_passphrase);
     free(settings->sftp_password);

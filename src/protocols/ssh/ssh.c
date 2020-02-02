@@ -19,6 +19,7 @@
 
 #include "config.h"
 
+#include "argv.h"
 #include "common/recording.h"
 #include "common-ssh/sftp.h"
 #include "common-ssh/ssh.h"
@@ -26,6 +27,7 @@
 #include "sftp.h"
 #include "ssh.h"
 #include "terminal/terminal.h"
+#include "ttymode.h"
 
 #ifdef ENABLE_SSH_AGENT
 #include "ssh_agent.h"
@@ -129,17 +131,9 @@ static guac_common_ssh_user* guac_ssh_get_user(guac_client* client) {
 
     } /* end if key given */
 
-    /* Otherwise, use password */
-    else {
-
-        /* Get password if not provided */
-        if (settings->password == NULL)
-            settings->password = guac_terminal_prompt(ssh_client->term,
-                    "Password: ", false);
-
-        /* Set provided password */
+    /* If available, get password from settings */
+    else if (settings->password != NULL) {
         guac_common_ssh_user_set_password(user, settings->password);
-
     }
 
     /* Clear screen of any prompts */
@@ -147,6 +141,29 @@ static guac_common_ssh_user* guac_ssh_get_user(guac_client* client) {
 
     return user;
 
+}
+
+/**
+ * A function used to generate a terminal prompt to gather additional
+ * credentials from the guac_client during a connection, and using
+ * the specified string to generate the prompt for the user.
+ * 
+ * @param client
+ *     The guac_client object associated with the current connection
+ *     where additional credentials are required.
+ * 
+ * @param cred_name
+ *     The prompt text to display to the screen when prompting for the
+ *     additional credentials.
+ * 
+ * @return 
+ *     The string of credentials gathered from the user.
+ */
+static char* guac_ssh_get_credential(guac_client *client, char* cred_name) {
+
+    guac_ssh_client* ssh_client = (guac_ssh_client*) client->data;
+    return guac_terminal_prompt(ssh_client->term, cred_name, false);
+    
 }
 
 void* ssh_input_thread(void* data) {
@@ -191,6 +208,8 @@ void* ssh_client_thread(void* data) {
         return NULL;
     }
 
+    char ssh_ttymodes[GUAC_SSH_TTYMODES_SIZE(1)];
+
     /* Set up screen recording, if requested */
     if (settings->recording_path != NULL) {
         ssh_client->recording = guac_common_recording_create(client,
@@ -203,10 +222,11 @@ void* ssh_client_thread(void* data) {
     }
 
     /* Create terminal */
-    ssh_client->term = guac_terminal_create(client,
-            settings->font_name, settings->font_size,
-            settings->resolution, settings->width, settings->height,
-            settings->color_scheme);
+    ssh_client->term = guac_terminal_create(client, ssh_client->clipboard,
+            settings->disable_copy, settings->max_scrollback,
+            settings->font_name, settings->font_size, settings->resolution,
+            settings->width, settings->height, settings->color_scheme,
+            settings->backspace);
 
     /* Fail if terminal init failed */
     if (ssh_client->term == NULL) {
@@ -214,6 +234,9 @@ void* ssh_client_thread(void* data) {
                 "Terminal initialization failed");
         return NULL;
     }
+
+    /* Send current values of exposed arguments to owner only */
+    guac_client_for_owner(client, guac_ssh_send_current_argv, ssh_client);
 
     /* Set up typescript, if requested */
     if (settings->typescript_path != NULL) {
@@ -230,9 +253,13 @@ void* ssh_client_thread(void* data) {
         return NULL;
     }
 
+    /* Ensure connection is kept alive during lengthy connects */
+    guac_socket_require_keep_alive(client->socket);
+
     /* Open SSH session */
     ssh_client->session = guac_common_ssh_create_session(client,
-            settings->hostname, settings->port, ssh_client->user, settings->server_alive_interval);
+            settings->hostname, settings->port, ssh_client->user, settings->server_alive_interval,
+            settings->host_key, guac_ssh_get_credential);
     if (ssh_client->session == NULL) {
         /* Already aborted within guac_common_ssh_create_session() */
         return NULL;
@@ -248,6 +275,17 @@ void* ssh_client_thread(void* data) {
                 "Unable to open terminal channel.");
         return NULL;
     }
+
+    /* Set the client timezone */
+    if (settings->timezone != NULL) {
+        if (libssh2_channel_setenv(ssh_client->term_channel, "TZ",
+                    settings->timezone)) {
+            guac_client_log(client, GUAC_LOG_WARNING,
+                    "Unable to set the timezone: SSH server "
+                    "refused to set \"TZ\" variable.");
+        }
+    }
+
 
 #ifdef ENABLE_SSH_AGENT
     /* Start SSH agent forwarding, if enabled */
@@ -272,7 +310,8 @@ void* ssh_client_thread(void* data) {
         guac_client_log(client, GUAC_LOG_DEBUG, "Reconnecting for SFTP...");
         ssh_client->sftp_session =
             guac_common_ssh_create_session(client, settings->hostname,
-                    settings->port, ssh_client->user, settings->server_alive_interval);
+                    settings->port, ssh_client->user, settings->server_alive_interval,
+                    settings->host_key, NULL);
         if (ssh_client->sftp_session == NULL) {
             /* Already aborted within guac_common_ssh_create_session() */
             return NULL;
@@ -296,11 +335,30 @@ void* ssh_client_thread(void* data) {
 
     }
 
+    /* Set up the ttymode array prior to requesting the PTY */
+    int ttymodeBytes = guac_ssh_ttymodes_init(ssh_ttymodes,
+            GUAC_SSH_TTY_OP_VERASE, settings->backspace, GUAC_SSH_TTY_OP_END);
+    if (ttymodeBytes < 1)
+        guac_client_log(client, GUAC_LOG_WARNING, "Unable to set TTY modes."
+                "  Backspace may not work as expected.");
+
     /* Request PTY */
-    if (libssh2_channel_request_pty_ex(ssh_client->term_channel, "linux", sizeof("linux")-1, NULL, 0,
-            ssh_client->term->term_width, ssh_client->term->term_height, 0, 0)) {
+    if (libssh2_channel_request_pty_ex(ssh_client->term_channel,
+            settings->terminal_type, strlen(settings->terminal_type),
+            ssh_ttymodes, ttymodeBytes, ssh_client->term->term_width,
+            ssh_client->term->term_height, 0, 0)) {
         guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR, "Unable to allocate PTY.");
         return NULL;
+    }
+
+    /* Forward specified locale */
+    if (settings->locale != NULL) {
+        if (libssh2_channel_setenv(ssh_client->term_channel, "LANG",
+                    settings->locale)) {
+            guac_client_log(client, GUAC_LOG_WARNING,
+                    "Unable to forward locale: SSH server refused to set "
+                    "\"LANG\" environment variable.");
+        }
     }
 
     /* If a command is specified, run that instead of a shell */
@@ -321,6 +379,7 @@ void* ssh_client_thread(void* data) {
 
     /* Logged in */
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection successful.");
+    guac_terminal_start(ssh_client->term);
 
     /* Start input thread */
     if (pthread_create(&(input_thread), NULL, ssh_input_thread, (void*) client)) {

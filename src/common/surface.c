@@ -79,13 +79,6 @@
 #endif
 
 /**
- * The JPEG image quality ('quantization') setting to use. Range 0-100 where
- * 100 is the highest quality/largest file size, and 0 is the lowest
- * quality/smallest file size.
- */
-#define GUAC_SURFACE_JPEG_IMAGE_QUALITY 90
-
-/**
  * The framerate which, if exceeded, indicates that JPEG is preferred.
  */
 #define GUAC_COMMON_SURFACE_JPEG_FRAMERATE 3
@@ -95,13 +88,6 @@
  * it should be compressed as a PNG image to avoid the JPEG compression tax.
  */
 #define GUAC_SURFACE_JPEG_MIN_BITMAP_SIZE 4096
-
-/**
- * The WebP image quality ('quantization') setting to use. Range 0-100 where
- * 100 is the highest quality/largest file size, and 0 is the lowest
- * quality/smallest file size.
- */
-#define GUAC_SURFACE_WEBP_IMAGE_QUALITY 90
 
 /**
  * The JPEG compression min block size. This defines the optimal rectangle block
@@ -274,17 +260,30 @@ static int __guac_common_surface_is_opaque(guac_common_surface* surface,
 
 /**
  * Returns whether the given rectangle should be combined into the existing
- * dirty rectangle, to be eventually flushed as a "png" instruction.
+ * dirty rectangle, to be eventually flushed as image data, or would be best
+ * kept independent of the current rectangle.
  *
- * @param surface The surface to be queried.
- * @param rect The update rectangle.
- * @param rect_only Non-zero if this update, by its nature, contains only
- *                  metainformation about the update's rectangle, zero if
- *                  the update also contains image data.
- * @return Non-zero if the update should be combined with any existing update,
- *         zero otherwise.
+ * @param surface
+ *     The surface being updated.
+ *
+ * @param rect
+ *     The bounding rectangle of the update being made to the surface.
+ *
+ * @param rect_only
+ *     Non-zero if this update, by its nature, contains only metainformation
+ *     about the update's bounding rectangle, zero if the update also contains
+ *     image data.
+ *
+ * @return
+ *     Non-zero if the update should be combined with any existing update, zero
+ *     otherwise.
  */
 static int __guac_common_should_combine(guac_common_surface* surface, const guac_common_rect* rect, int rect_only) {
+
+    /* Always favor combining updates if surface is currently a purely
+     * server-side scratch area */
+    if (!surface->realized)
+        return 1;
 
     if (surface->dirty) {
 
@@ -1667,6 +1666,36 @@ static void __guac_common_surface_flush_to_png(guac_common_surface* surface,
 }
 
 /**
+ * Returns an appropriate quality between 0 and 100 for lossy encoding
+ * depending on the current processing lag calculated for the given client.
+ *
+ * @param client
+ *     The client for which the lossy quality is being calculated.
+ *
+ * @return
+ *     A value between 0 and 100 inclusive which seems appropriate for the
+ *     client based on lag measurements.
+ */
+static int guac_common_surface_suggest_quality(guac_client* client) {
+
+    int lag = guac_client_get_processing_lag(client);
+
+    /* Scale quality linearly from 90 to 30 as lag varies from 20ms to 80ms */
+    int quality = 90 - (lag - 20);
+
+    /* Do not exceed 90 for quality */
+    if (quality > 90)
+        return 90;
+
+    /* Do not go below 30 for quality */
+    if (quality < 30)
+        return 30;
+
+    return quality;
+
+}
+
+/**
  * Flushes the bitmap update currently described by the dirty rectangle within
  * the given surface directly via an "img" instruction as JPEG data. The
  * resulting instructions will be sent over the socket associated with the
@@ -1702,7 +1731,7 @@ static void __guac_common_surface_flush_to_jpeg(guac_common_surface* surface) {
         /* Send JPEG for rect */
         guac_client_stream_jpeg(surface->client, socket, GUAC_COMP_OVER, layer,
                 surface->dirty_rect.x, surface->dirty_rect.y, rect,
-                GUAC_SURFACE_JPEG_IMAGE_QUALITY);
+                guac_common_surface_suggest_quality(surface->client));
 
         cairo_surface_destroy(rect);
         surface->realized = 1;
@@ -1764,7 +1793,7 @@ static void __guac_common_surface_flush_to_webp(guac_common_surface* surface,
         /* Send WebP for rect */
         guac_client_stream_webp(surface->client, socket, GUAC_COMP_OVER, layer,
                 surface->dirty_rect.x, surface->dirty_rect.y, rect,
-                GUAC_SURFACE_WEBP_IMAGE_QUALITY, 0);
+                guac_common_surface_suggest_quality(surface->client), 0);
 
         cairo_surface_destroy(rect);
         surface->realized = 1;

@@ -16,6 +16,12 @@
 # specific language governing permissions and limitations
 # under the License.
 #
+# NOTE: Parts of this file (Makefile.am) are automatically transcluded verbatim
+# into Makefile.in. Though the build system (GNU Autotools) automatically adds
+# its own license boilerplate to the generated Makefile.in, that boilerplate
+# does not apply to the transcluded portions of Makefile.am which are licensed
+# to you by the ASF under the Apache License, Version 2.0, as described above.
+#
 
 AUTOMAKE_OPTIONS = foreign 
 
@@ -61,11 +67,12 @@ guacd_LDFLAGS =    \
     @SSL_LIBS@
 
 EXTRA_DIST =            \
-    init.d/guacd.in     \
-    man/guacd.8.in      \
+    init.d/guacd.in          \
+    systemd/guacd.service.in \
+    man/guacd.8.in           \
     man/guacd.conf.5.in
 
-CLEANFILES = $(init_SCRIPTS)
+CLEANFILES = $(init_SCRIPTS) $(systemd_UNITS)
 
 # Init script
 if ENABLE_INIT
@@ -75,5 +82,14 @@ init_SCRIPTS = init.d/guacd
 init.d/guacd: init.d/guacd.in
 	sed -e 's,[@]sbindir[@],$(sbindir),g' < init.d/guacd.in > init.d/guacd
 	chmod +x init.d/guacd
+endif
+
+# Systemd service
+if ENABLE_SYSTEMD
+systemddir = @systemd_dir@
+systemd_DATA = systemd/guacd.service
+
+systemd/guacd.service: systemd/guacd.service.in
+	sed -e 's,[@]sbindir[@],$(sbindir),g' < systemd/guacd.service.in > systemd/guacd.service
 endif
 

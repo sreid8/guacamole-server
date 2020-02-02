@@ -139,6 +139,12 @@ typedef struct guac_terminal_display {
     guac_terminal_color palette[256];
 
     /**
+     * The default palette. Use GUAC_TERMINAL_INITIAL_PALETTE if null.
+     * Must free on destruction if not null.
+     */
+    guac_terminal_color (*default_palette)[256];
+
+    /**
      * Default foreground color for all glyphs.
      */
     guac_terminal_color default_foreground;
@@ -176,16 +182,9 @@ typedef struct guac_terminal_display {
     guac_layer* select_layer;
 
     /**
-     * Whether text is being selected.
+     * Whether text is currently selected.
      */
     bool text_selected;
-
-    /**
-     * Whether the selection is finished, and will no longer be modified. A
-     * committed selection remains highlighted for reference, but the
-     * highlight will be removed when the display changes.
-     */
-    bool selection_committed;
 
     /**
      * The row that the selection starts at.
@@ -215,7 +214,8 @@ typedef struct guac_terminal_display {
  */
 guac_terminal_display* guac_terminal_display_alloc(guac_client* client,
         const char* font_name, int font_size, int dpi,
-        guac_terminal_color* foreground, guac_terminal_color* background);
+        guac_terminal_color* foreground, guac_terminal_color* background,
+        guac_terminal_color (*palette)[256]);
 
 /**
  * Frees the given display.
@@ -224,7 +224,7 @@ void guac_terminal_display_free(guac_terminal_display* display);
 
 /**
  * Resets the palette of the given display to the initial, default color
- * values, as defined by GUAC_TERMINAL_INITIAL_PALETTE.
+ * values, as defined by default_palette or GUAC_TERMINAL_INITIAL_PALETTE.
  *
  * @param display
  *     The display to reset.
@@ -326,10 +326,43 @@ void guac_terminal_display_select(guac_terminal_display* display,
         int start_row, int start_col, int end_row, int end_col);
 
 /**
- * Commits the select rectangle, allowing the display to clear it when
- * necessary.
+ * Clears the currently-selected region, removing the highlight.
+ *
+ * @param display
+ *     The guac_terminal_display whose currently-selected region should be
+ *     cleared.
  */
-void guac_terminal_display_commit_select(guac_terminal_display* display);
+void guac_terminal_display_clear_select(guac_terminal_display* display);
+
+/**
+ * Alters the font of the terminal display. The available display area and the
+ * regular grid of character cells will be resized as necessary to compensate
+ * for any changes in font metrics.
+ *
+ * If successful, the terminal itself MUST be manually resized to take into
+ * account the new character dimensions, and MUST be manually redrawn. Failing
+ * to do so will result in graphical artifacts.
+ *
+ * @param display
+ *     The display whose font family and/or size are being changed.
+ *
+ * @param font_name
+ *     The name of the new font family, or NULL if the font family should
+ *     remain unchanged.
+ *
+ * @param font_size
+ *     The new font size, in points, or -1 if the font size should remain
+ *     unchanged.
+ *
+ * @param dpi
+ *     The resolution of the display in DPI. If the font size will not be
+ *     changed (the font size given is -1), this value is ignored.
+ *
+ * @return
+ *     Zero if the font was successfully changed, non-zero otherwise.
+ */
+int guac_terminal_display_set_font(guac_terminal_display* display,
+        const char* font_name, int font_size, int dpi);
 
 #endif
 

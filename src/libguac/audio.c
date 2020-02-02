@@ -19,13 +19,12 @@
 
 #include "config.h"
 
+#include "guacamole/audio.h"
+#include "guacamole/client.h"
+#include "guacamole/protocol.h"
+#include "guacamole/stream.h"
+#include "guacamole/user.h"
 #include "raw_encoder.h"
-
-#include <guacamole/audio.h>
-#include <guacamole/client.h>
-#include <guacamole/protocol.h>
-#include <guacamole/stream.h>
-#include <guacamole/user.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -118,6 +117,12 @@ guac_audio_stream* guac_audio_stream_alloc(guac_client* client,
     audio->client = client;
     audio->stream = guac_client_alloc_stream(client);
 
+    /* Abort allocation if underlying stream cannot be allocated */
+    if (audio->stream == NULL) {
+        free(audio);
+        return NULL;
+    }
+
     /* Load PCM properties */
     audio->rate = rate;
     audio->channels = channels;
@@ -188,6 +193,9 @@ void guac_audio_stream_free(guac_audio_stream* audio) {
     /* Clean up encoder */
     if (audio->encoder != NULL && audio->encoder->end_handler)
         audio->encoder->end_handler(audio);
+
+    /* Release stream back to client pool */
+    guac_client_free_stream(audio->client, audio->stream);
 
     /* Free associated data */
     free(audio);

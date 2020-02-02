@@ -16,6 +16,12 @@
 # specific language governing permissions and limitations
 # under the License.
 #
+# NOTE: Parts of this file (Makefile.am) are automatically transcluded verbatim
+# into Makefile.in. Though the build system (GNU Autotools) automatically adds
+# its own license boilerplate to the generated Makefile.in, that boilerplate
+# does not apply to the transcluded portions of Makefile.am which are licensed
+# to you by the ASF under the Apache License, Version 2.0, as described above.
+#
 
 AUTOMAKE_OPTIONS = foreign 
 ACLOCAL_AMFLAGS = -I m4
@@ -26,10 +32,12 @@ noinst_HEADERS =                 \
     terminal/buffer.h            \
     terminal/char_mappings.h     \
     terminal/common.h            \
+    terminal/color-scheme.h      \
     terminal/display.h           \
     terminal/named-colors.h      \
     terminal/palette.h           \
     terminal/scrollbar.h         \
+    terminal/select.h            \
     terminal/terminal.h          \
     terminal/terminal_handlers.h \
     terminal/types.h             \
@@ -39,13 +47,16 @@ noinst_HEADERS =                 \
 libguac_terminal_la_SOURCES =   \
     buffer.c                    \
     char_mappings.c             \
+    color-scheme.c              \
     common.c                    \
     display.c                   \
     named-colors.c              \
     palette.c                   \
     scrollbar.c                 \
+    select.c                    \
     terminal.c                  \
     terminal_handlers.c         \
+    terminal-stdin-stream.c     \
     typescript.c                \
     xparsecolor.c
 

@@ -76,8 +76,10 @@ int main(int argc, char* argv[]) {
     guacenc_log(GUAC_LOG_INFO, "Guacamole video encoder (guacenc) "
             "version " VERSION);
 
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 10, 100)
     /* Prepare libavcodec */
     avcodec_register_all();
+#endif
 
     /* Prepare libavformat */
     av_register_all();

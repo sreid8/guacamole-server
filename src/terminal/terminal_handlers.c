@@ -135,8 +135,14 @@ int guac_terminal_echo(guac_terminal* term, unsigned char c) {
 
     /* Echo to pipe stream if open and not starting an ESC sequence */
     if (term->pipe_stream != NULL && c != 0x1B) {
+
         guac_terminal_pipe_stream_write(term, c);
-        return 0;
+
+        /* Do not render output while pipe is open unless explicitly requested
+         * via flags */
+        if (!(term->pipe_stream_flags & GUAC_TERMINAL_PIPE_INTERPRET_OUTPUT))
+            return 0;
+
     }
 
     /* If using non-Unicode mapping, just map straight bytes */
@@ -367,6 +373,10 @@ int guac_terminal_escape(guac_terminal* term, unsigned char c) {
             guac_terminal_reset(term);
             break;
 
+        case '_':
+            term->char_handler = guac_terminal_apc;
+            break;
+
         default:
             guac_client_log(term->client, GUAC_LOG_DEBUG,
                     "Unhandled ESC sequence: %c", c);
@@ -422,6 +432,7 @@ static bool* __guac_terminal_get_flag(guac_terminal* term, int num, char private
     if (private_mode == '?') {
         switch (num) {
             case 1:  return &(term->application_cursor_keys); /* DECCKM */
+            case 25: return &(term->cursor_visible); /* DECTECM */
         }
     }
 
@@ -1137,27 +1148,44 @@ int guac_terminal_download(guac_terminal* term, unsigned char c) {
 
 int guac_terminal_open_pipe_stream(guac_terminal* term, unsigned char c) {
 
-    static char stream_name[2048];
+    static char param[2048];
     static int length = 0;
+    static int flags = 0;
 
     /* Open pipe on ECMA-48 ST (String Terminator) */
     if (c == 0x9C || c == 0x5C || c == 0x07) {
 
-        /* End stream name string */
-        stream_name[length++] = '\0';
+        /* End parameter string */
+        param[length++] = '\0';
         length = 0;
 
-        /* Open new pipe stream */
-        guac_terminal_pipe_stream_open(term, stream_name);
+        /* Open new pipe stream using final parameter as name */
+        guac_terminal_pipe_stream_open(term, param, flags);
 
         /* Return to echo mode */
         term->char_handler = guac_terminal_echo;
 
+        /* Reset tracked flags for sake of any future pipe streams */
+        flags = 0;
+
     }
 
-    /* Otherwise, store character within stream name */
-    else if (length < sizeof(stream_name)-1)
-        stream_name[length++] = c;
+    /* Interpret all parameters prior to the final parameter as integer
+     * flags which should affect the pipe stream when opened */
+    else if (c == ';') {
+
+        /* End parameter string */
+        param[length++] = '\0';
+        length = 0;
+
+        /* Parse parameter string as integer flags */
+        flags |= atoi(param);
+
+    }
+
+    /* Otherwise, store character within parameter */
+    else if (length < sizeof(param)-1)
+        param[length++] = c;
 
     return 0;
 
@@ -1180,6 +1208,39 @@ int guac_terminal_close_pipe_stream(guac_terminal* term, unsigned char c) {
     return 0;
 
 }
+
+int guac_terminal_set_scrollback(guac_terminal* term, unsigned char c) {
+
+    static char param[16];
+    static int length = 0;
+
+    /* Open pipe on ECMA-48 ST (String Terminator) */
+    if (c == 0x9C || c == 0x5C || c == 0x07) {
+
+        /* End parameter string */
+        param[length++] = '\0';
+        length = 0;
+
+        /* Assign scrollback size */
+        term->requested_scrollback = atoi(param);
+
+        /* Update scrollbar bounds */
+        guac_terminal_scrollbar_set_bounds(term->scrollbar,
+                -guac_terminal_available_scroll(term), 0);
+
+        /* Return to echo mode */
+        term->char_handler = guac_terminal_echo;
+
+    }
+
+    /* Otherwise, store character within parameter */
+    else if (length < sizeof(param) - 1)
+        param[length++] = c;
+
+    return 0;
+
+}
+
 
 int guac_terminal_window_title(guac_terminal* term, unsigned char c) {
 
@@ -1319,6 +1380,10 @@ int guac_terminal_osc(guac_terminal* term, unsigned char c) {
         else if (operation == 482203)
             term->char_handler = guac_terminal_close_pipe_stream;
 
+        /* Set scrollback size OSC */
+        else if (operation == 482204)
+            term->char_handler = guac_terminal_set_scrollback;
+
         /* Set window title OSC */
         else if (operation == 0 || operation == 2)
             term->char_handler = guac_terminal_window_title;
@@ -1373,3 +1438,19 @@ int guac_terminal_ctrl_func(guac_terminal* term, unsigned char c) {
 
 }
 
+int guac_terminal_apc(guac_terminal* term, unsigned char c) {
+
+    /* xterm does not implement APC functions and neither do we. Look for the
+     * "ESC \" (string terminator) sequence, while ignoring other chars. */
+    static bool escaping = false;
+
+    if (escaping) {
+        if (c == '\\')
+            term->char_handler = guac_terminal_echo;
+        escaping = false;
+    }
+
+    if (c == 0x1B)
+        escaping = true;
+    return 0;
+}

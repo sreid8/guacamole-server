@@ -18,7 +18,8 @@
 #
 
 AC_PREREQ([2.61])
-AC_INIT([guacamole-server], [0.9.14])
+AC_INIT([guacamole-server], [1.1.0])
+AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 AM_SILENT_RULES([yes])
 
@@ -27,6 +28,9 @@ LT_INIT([dlopen])
 
 AC_CONFIG_HEADER([config.h])
 AC_CONFIG_MACRO_DIR([m4])
+
+# Use TAP test driver for tests (part of automake)
+AC_REQUIRE_AUX_FILE([tap-driver.sh])
 
 # Programs
 AC_PROG_CC
@@ -38,6 +42,7 @@ AC_CHECK_HEADERS([fcntl.h stdlib.h string.h sys/socket.h time.h sys/time.h syslo
 
 # Source characteristics
 AC_DEFINE([_XOPEN_SOURCE], [700], [Uses X/Open and POSIX APIs])
+AC_DEFINE([__BSD_VISIBLE], [1], [Uses BSD-specific APIs (if available)])
 
 # Check for whether math library is required
 AC_CHECK_LIB([m], [cos],
@@ -116,6 +121,16 @@ AC_CHECK_DECL([poll],
                [Whether poll() is defined])],,
 	[#include <poll.h>])
 
+AC_CHECK_DECL([strlcpy],
+	[AC_DEFINE([HAVE_STRLCPY],,
+               [Whether strlcpy() is defined])],,
+	[#include <string.h>])
+
+AC_CHECK_DECL([strlcat],
+	[AC_DEFINE([HAVE_STRLCAT],,
+               [Whether strlcat() is defined])],,
+	[#include <string.h>])
+
 # Typedefs
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
@@ -136,6 +151,10 @@ AC_SUBST([PULSE_INCLUDE], '-I$(top_srcdir)/src/pulse')
 AC_SUBST([COMMON_SSH_LTLIB],   '$(top_builddir)/src/common-ssh/libguac_common_ssh.la')
 AC_SUBST([COMMON_SSH_INCLUDE], '-I$(top_srcdir)/src/common-ssh')
 
+# RDP support
+AC_SUBST([LIBGUAC_CLIENT_RDP_LTLIB],   '$(top_builddir)/src/protocols/rdp/libguac-client-rdp.la')
+AC_SUBST([LIBGUAC_CLIENT_RDP_INCLUDE], '-I$(top_srcdir)/src/protocols/rdp')
+
 # Terminal emulator
 AC_SUBST([TERMINAL_LTLIB],   '$(top_builddir)/src/terminal/libguac_terminal.la')
 AC_SUBST([TERMINAL_INCLUDE], '-I$(top_srcdir)/src/terminal $(PANGO_CFLAGS) $(PANGOCAIRO_CFLAGS) $(COMMON_INCLUDE)')
@@ -147,6 +166,14 @@ AC_ARG_WITH(init_dir,
             ],init_dir=$withval)
 AM_CONDITIONAL([ENABLE_INIT], [test "x${init_dir}" != "x"])
 AC_SUBST(init_dir)
+
+# Systemd directory
+AC_ARG_WITH(systemd_dir,
+            [AS_HELP_STRING([--with-systemd-dir=<path>],
+                            [install systemd units to the given directory])
+            ],systemd_dir=$withval)
+AM_CONDITIONAL([ENABLE_SYSTEMD], [test "x${systemd_dir}" != "x"])
+AC_SUBST(systemd_dir)
 
 # guacd config file
 AC_ARG_WITH(guacd_conf,
@@ -519,520 +546,205 @@ then
 fi
 
 #
-# FreeRDP
+# TLS Locking Support within libVNCServer
 #
 
-have_freerdp=disabled
-RDP_LIBS=
+if test "x${have_libvncserver}" = "xyes"
+then
+
+    have_vnc_tls_locking=yes
+    AC_CHECK_MEMBERS([rfbClient.LockWriteToTLS, rfbClient.UnlockWriteToTLS],
+                     [], [have_vnc_tls_locking=no],
+                     [[#include <rfb/rfbclient.h>]])
+
+    if test "x${have_vnc_tls_locking}" = "xno"
+    then
+        AC_MSG_WARN([
+      --------------------------------------------
+       This version of libvncclient lacks support
+       for TLS locking.  VNC connections that use
+       TLS may experience instability as documented
+       in GUACAMOLE-414])
+    else
+        AC_DEFINE([ENABLE_VNC_TLS_LOCKING],,
+                  [Whether support for TLS locking within VNC is enabled.])
+    fi
+
+fi
+
+#
+# FreeRDP 2 (libfreerdp2, libfreerdp-client2, and libwinpr2)
+#
+
+have_freerdp2=disabled
+FREERDP2_PLUGIN_DIR=
+
 AC_ARG_WITH([rdp],
             [AS_HELP_STRING([--with-rdp],
                             [support RDP @<:@default=check@:>@])],
             [],
             [with_rdp=check])
 
+# FreeRDP plugin directory
+AC_ARG_WITH(freerdp_plugin_dir,
+            [AS_HELP_STRING([--with-freerdp-plugin-dir=<path>],
+                            [install FreeRDP plugins to the given directory @<:@default=check@:>@])
+            ],FREERDP2_PLUGIN_DIR=$withval)
+
+# Preserve CPPFLAGS so it can be restored later, following the addition of
+# options specific to FreeRDP tests
+OLDCPPFLAGS="$CPPFLAGS"
+
 if test "x$with_rdp" != "xno"
 then
-    have_winpr=yes
-    have_freerdp=yes
-    legacy_freerdp_extensions=no
-    rdpsettings_interface=unknown
-    rdpsettings_audiocapture=yes
-    rdpsettings_audioplayback=yes
-    rdpsettings_deviceredirection=yes
-    freerdp_interface=unknown
-    event_interface=unknown
-
-    # libfreerdp-core / libfreerdp
-    AC_CHECK_LIB([freerdp-core], [freerdp_new],
-                 [RDP_LIBS="$RDP_LIBS -lfreerdp-core"],
-                 [AC_CHECK_LIB([freerdp], [freerdp_new],
-                               [RDP_LIBS="$RDP_LIBS -lfreerdp -lfreerdp-client"],
-                               [AC_MSG_WARN([
+    have_freerdp2=yes
+    PKG_CHECK_MODULES([RDP], [freerdp2 freerdp-client2 winpr2],
+                      [CPPFLAGS="${RDP_CFLAGS} -Werror $CPPFLAGS"]
+                      [AS_IF([test "x${FREERDP2_PLUGIN_DIR}" = "x"],
+                             [FREERDP2_PLUGIN_DIR="`$PKG_CONFIG --variable=libdir freerdp2`/freerdp2"])],
+                      [AC_MSG_WARN([
   --------------------------------------------
-   Unable to find libfreerdp-core / libfreerdp
+   Unable to find FreeRDP (libfreerdp2 / libfreerdp-client2 / libwinpr2)
    RDP will be disabled.
   --------------------------------------------])
-                  have_freerdp=no])])
-fi
-
-
-# libfreerdp-cache
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_LIB([freerdp-cache], [glyph_cache_register_callbacks],
-                 [RDP_LIBS="$RDP_LIBS -lfreerdp-cache"])
-fi
-
-# libfreerdp-channels (1.0) / libfreerdp-client + libfreerdp-core (1.1)
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_LIB([freerdp-client], [freerdp_channels_new],
-                 [RDP_LIBS="$RDP_LIBS -lfreerdp-client"],
-                 [AC_CHECK_LIB([freerdp-channels], [freerdp_channels_new],
-                               [RDP_LIBS="$RDP_LIBS -lfreerdp-channels"
-                               legacy_freerdp_extensions=yes])],
-                 [-lfreerdp-core])
-fi
-
-# libfreerdp-utils
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_LIB([freerdp-utils], [svc_plugin_init],
-                 [RDP_LIBS="$RDP_LIBS -lfreerdp-utils"])
-fi
-
-# libfreerdp-codec
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_LIB([freerdp-codec], [freerdp_image_convert],
-                 [RDP_LIBS="$RDP_LIBS -lfreerdp-codec"])
+                       have_freerdp2=no])
 fi
 
 # Available color conversion functions
-if test "x${have_freerdp}" = "xyes"
+if test "x$have_freerdp2" = "xyes"
 then
-    AC_CHECK_DECL([freerdp_convert_gdi_order_color],
-        [AC_DEFINE([HAVE_FREERDP_CONVERT_GDI_ORDER_COLOR],,
-                   [Whether freerdp_convert_gdi_order_color() is defined])],,
-        [#include <freerdp/codec/color.h>])
 
-    AC_CHECK_DECL([freerdp_color_convert_drawing_order_color_to_gdi_color],
-        [AC_DEFINE([HAVE_FREERDP_COLOR_CONVERT_DRAWING_ORDER_COLOR_TO_GDI_COLOR],,
-                   [Whether freerdp_color_convert_drawing_order_color_to_gdi_color() is defined])],,
-        [#include <freerdp/codec/color.h>])
+    # FreeRDP 2.0.0-rc3 and older referred to FreeRDPConvertColor() as
+    # ConvertColor()
+    AC_CHECK_DECL([FreeRDPConvertColor],
+                  [AC_DEFINE([HAVE_FREERDPCONVERTCOLOR],,
+                             [Whether FreeRDPConvertColor() is defined])],,
+                  [#include <freerdp/codec/color.h>])
+
 fi
 
-# Check for interval polling in plugins
-if test "x${have_freerdp}" = "xyes"
+# Variation in memory internal allocation/free behavior
+if test "x${have_freerdp2}" = "xyes"
 then
-    AC_CHECK_MEMBERS([rdpSvcPlugin.interval_ms],,,
-                     [[#include <freerdp/utils/svc_plugin.h>]])
+
+    # FreeRDP 2.0.0-rc0 and older automatically free rdpBitmap and its
+    # associated data member within Bitmap_Free(), relying on the
+    # implementation-specific free handler to free only implementation-specific
+    # data. This changed in commit 2cf10cc, and implementations must now
+    # manually free all data associated with the rdpBitmap, even data which
+    # was not allocated by the implementation.
+    AC_MSG_CHECKING([whether Bitmap_Free() frees the rdpBitmap and its image data])
+    AC_EGREP_CPP([\"2\\.0\\.0-dev\"], [
+
+        #include <freerdp/version.h>
+        FREERDP_VERSION_FULL
+
+    ],
+    [AC_MSG_RESULT([yes])]
+    [AC_DEFINE([FREERDP_BITMAP_FREE_FREES_BITMAP],,
+               [Whether Bitmap_Free() frees the rdpBitmap and its image data])],
+    [AC_MSG_RESULT([no])])
+
 fi
 
-# Keyboard layout header
-if test "x${have_freerdp}" = "xyes"
+# Glyph callback variants
+if test "x${have_freerdp2}" = "xyes"
 then
-    AC_CHECK_HEADERS([freerdp/locale/keyboard.h],,
-                      [AC_CHECK_HEADERS([freerdp/kbd/layouts.h],,
-                                       [AC_MSG_WARN([
-  --------------------------------------------
-   Unable to find keyboard layout headers
-   RDP will be disabled.
-  --------------------------------------------])
-                                        have_freerdp=no])])
+
+    # FreeRDP 2.0.0-rc3 and older used UINT32 for integer parameters to all
+    # rdpGlyph callbacks
+    AC_MSG_CHECKING([whether rdpGlyph callbacks accept INT32 integer parameters])
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+
+        #include <freerdp/freerdp.h>
+        #include <freerdp/graphics.h>
+        #include <winpr/wtypes.h>
+
+        BOOL test_begindraw(rdpContext* context, INT32 x, INT32 y,
+                INT32 width, INT32 height, UINT32 fgcolor, UINT32 bgcolor,
+                BOOL redundant);
+
+        rdpGlyph glyph = {
+            .BeginDraw = test_begindraw
+        };
+
+        int main() {
+            return (int) glyph.BeginDraw(NULL, 0, 0, 0, 0, 0, 0, FALSE);
+        }
+
+    ]])],
+    [AC_MSG_RESULT([yes])]
+    [AC_DEFINE([FREERDP_GLYPH_CALLBACKS_ACCEPT_INT32],,
+               [Whether rdpGlyph callbacks accept INT32 integer parameters])],
+    [AC_MSG_RESULT([no])])
+
 fi
 
-# New headers defining addins
-if test "x${have_freerdp}" = "xyes"
+# CLIPRDR callback variants
+if test "x${have_freerdp2}" = "xyes"
 then
-    AC_CHECK_HEADERS([freerdp/addin.h freerdp/client/channels.h])
+
+    # FreeRDP 2.0.0-rc3 and older did not use const for CLIPRDR callbacks
+    AC_MSG_CHECKING([whether CLIPRDR callbacks require const for their final parameter])
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+
+        #include <freerdp/client/cliprdr.h>
+        #include <winpr/wtypes.h>
+
+        UINT test_monitor_ready(CliprdrClientContext* cliprdr,
+                const CLIPRDR_MONITOR_READY* monitor_ready);
+
+        CliprdrClientContext context = {
+            .MonitorReady = test_monitor_ready
+        };
+
+        int main() {
+            return (int) context.MonitorReady(NULL, NULL);
+        }
+
+    ]])],
+    [AC_MSG_RESULT([yes])]
+    [AC_DEFINE([FREERDP_CLIPRDR_CALLBACKS_REQUIRE_CONST],,
+               [Whether CLIPRDR callbacks require const for the final parameter])],
+    [AC_MSG_RESULT([no])])
+
 fi
 
-# Header defining cliprdr
-if test "x${have_freerdp}" = "xyes"
+# RAIL callback variants
+if test "x${have_freerdp2}" = "xyes"
 then
-    AC_CHECK_HEADERS([freerdp/client/cliprdr.h],,
-                     [AC_CHECK_HEADERS([freerdp/plugins/cliprdr.h],,
-                                       [AC_MSG_WARN([
-  --------------------------------------------
-   Unable to find cliprdr headers
-   RDP will be disabled.
-  --------------------------------------------])
-                                        have_freerdp=no],
-                                       [#include <freerdp/types.h>])],
-                     [#include <winpr/wtypes.h>
-                      #include <winpr/collections.h>])
+
+    # FreeRDP 2.0.0-rc3 and older did not use const for RAIL callbacks
+    AC_MSG_CHECKING([whether RAIL callbacks require const for their final parameter])
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+
+        #include <freerdp/client/rail.h>
+        #include <winpr/wtypes.h>
+
+        UINT test_server_handshake(RailClientContext* rail,
+                const RAIL_HANDSHAKE_ORDER* handshake);
+
+        RailClientContext context = {
+            .ServerHandshake = test_server_handshake
+        };
+
+        int main() {
+            return (int) context.ServerHandshake(NULL, NULL);
+        }
+
+    ]])],
+    [AC_MSG_RESULT([yes])]
+    [AC_DEFINE([FREERDP_RAIL_CALLBACKS_REQUIRE_CONST],,
+               [Whether RAIL callbacks require const for the final parameter])],
+    [AC_MSG_RESULT([no])])
+
 fi
 
-# Header defining display update channel
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_HEADERS([freerdp/client/disp.h],
-                     [AC_DEFINE([HAVE_FREERDP_DISPLAY_UPDATE_SUPPORT],,
-                                [Whether FreeRDP supports the display update channel])]
-                     [AC_CHECK_MEMBERS([rdpSettings.SupportDisplayControl],,,
-                                       [[#include <freerdp/freerdp.h>]])],,
-                     [#include <winpr/wtypes.h>
-                      #include <winpr/collections.h>])
-fi
+# Restore CPPFLAGS, removing FreeRDP-specific options needed for testing
+CPPFLAGS="$OLDCPPFLAGS"
 
-# Support for RDP gateways 
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_MEMBERS([rdpSettings.GatewayEnabled],
-                     [AC_DEFINE([HAVE_FREERDP_GATEWAY_SUPPORT],,
-                                [Whether FreeRDP supports RDP gateways])],,
-                     [[#include <freerdp/freerdp.h>]])
-fi
-
-# Support for load balancing via connection brokers 
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_MEMBERS([rdpSettings.LoadBalanceInfo],
-                     [AC_DEFINE([HAVE_FREERDP_LOAD_BALANCER_SUPPORT],,
-                                [Whether FreeRDP supports load balancers])],,
-                     [[#include <freerdp/freerdp.h>]])
-fi
-
-# Support for "PubSub" event system
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_DECL([PubSub_SubscribeChannelConnected],
-        [AC_DEFINE([HAVE_FREERDP_EVENT_PUBSUB],,
-                   [Whether this version of FreeRDP provides the PubSub event system])],,
-        [#include <freerdp/event.h>])
-fi
-
-# Addin registration variations
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_DECL([freerdp_register_addin_provider],
-        [AC_DEFINE([HAVE_FREERDP_REGISTER_ADDIN_PROVIDER],,
-                   [Whether freerdp_register_addin_provider() is defined])],,
-        [#include <freerdp/addin.h>])
-
-    AC_CHECK_DECL([freerdp_channels_global_init],
-        [AC_DEFINE([HAVE_FREERDP_CHANNELS_GLOBAL_INIT],,
-                   [Whether freerdp_channels_global_init() is defined])],,
-        [#include <freerdp/channels/channels.h>])
-fi
-
-# Availability of ADDIN_ARGV structure for configuring plugins
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_TYPE([ADDIN_ARGV],
-        [AC_DEFINE([HAVE_ADDIN_ARGV],,
-                   [Whether the ADDIN_ARGV type is available])],,
-        [#include <freerdp/settings.h>])
-fi
-
-#
-# FreeRDP: WinPR
-#
-
-# Check for stream support via WinPR
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_HEADER(winpr/stream.h,,
-                    [have_winpr=no,
-                     AC_CHECK_DECL([stream_write_uint8],,
-                                  [AC_MSG_WARN([
-  --------------------------------------------
-   Unable to find stream support
-   RDP will be disabled.
-  --------------------------------------------])
-                                   have_freerdp=no],
-                                  [#include <freerdp/utils/stream.h>])])
-fi
-
-# Check for types in WinPR
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_HEADER(winpr/wtypes.h,,
-                    [have_winpr=no,
-                     AC_CHECK_HEADER(freerdp/types.h,,
-                                     [AC_MSG_WARN([
-  --------------------------------------------
-   Unable to find type definitions
-   RDP will be disabled.
-  --------------------------------------------])
-                                      have_freerdp=no])])
-fi
-
-if test "x${have_freerdp}" = "xyes" -a "x${have_winpr}" = "xyes"
-then
-    AC_DEFINE([ENABLE_WINPR],,
-              [Whether library support for WinPR types was found])
-fi
-
-#
-# FreeRDP: freerdp 
-#
-
-if test "x${have_freerdp}" = "xyes"
-then
-    # Check for current (as of 1.1) freerdp interface
-    AC_CHECK_MEMBERS([freerdp.ContextSize],
-                     [freerdp_interface=stable],,
-                     [[#include <freerdp/freerdp.h>]])
-
-    # If not current, check for legacy interface
-    if test "x${freerdp_interface}" = "xunknown"
-    then
-        AC_CHECK_MEMBERS([freerdp.context_size],
-                         [freerdp_interface=legacy],,
-                         [[#include <freerdp/freerdp.h>]])
-    fi
-
-    # Set defines based on interface type, warn if unknown
-    if test "x${freerdp_interface}" = "xlegacy"; then
-        AC_DEFINE([LEGACY_FREERDP],,
-                  [Whether the older version of the FreeRDP API was found])
-    elif test "x${freerdp_interface}" = "xunknown"; then
-        AC_MSG_WARN([
-  --------------------------------------------
-   Unknown FreeRDP interface
-   RDP will be disabled.
-  --------------------------------------------])
-        have_freerdp=no
-    fi
-fi
-
-#
-# FreeRDP: rdpSettings
-#
-
-if test "x${have_freerdp}" = "xyes"
-then
-    # Check for current (as of 1.1) rdpSettings interface
-    AC_CHECK_MEMBERS([rdpSettings.Width,
-                      rdpSettings.Height,
-                      rdpSettings.FastPathInput,
-                      rdpSettings.FastPathOutput,
-                      rdpSettings.SendPreconnectionPdu,
-                      rdpSettings.OrderSupport],
-                     [rdpsettings_interface=stable],,
-                     [[#include <freerdp/freerdp.h>]])
-
-    # If not current, check for legacy interface
-    if test "x${rdpsettings_interface}" = "xunknown"
-    then
-        AC_CHECK_MEMBERS([rdpSettings.width,
-                          rdpSettings.height,
-                          rdpSettings.order_support],
-                         [rdpsettings_interface=legacy],,
-                         [[#include <freerdp/freerdp.h>]])
-    fi
-
-    # Set defines based on interface type, warn if unknown
-    if test "x${rdpsettings_interface}" = "xlegacy"; then
-        AC_DEFINE([LEGACY_RDPSETTINGS],,
-                  [Whether the legacy version of the rdpSettings API was found])
-
-        # Legacy interface may not have AudioPlayback settings
-        AC_CHECK_MEMBERS([rdpSettings.audio_playback],,
-                         [rdpsettings_audioplayback=no],
-                         [[#include <freerdp/freerdp.h>]])
-
-        # Legacy interface may not have AudioCapture settings
-        AC_CHECK_MEMBERS([rdpSettings.audio_capture],,
-                         [rdpsettings_audiocapture=no],
-                         [[#include <freerdp/freerdp.h>]])
-
-        # Legacy interface may not have DeviceRedirection settings
-        AC_CHECK_MEMBERS([rdpSettings.device_redirection],,
-                         [rdpsettings_deviceredirection=no],
-                         [[#include <freerdp/freerdp.h>]])
-
-    elif test "x${rdpsettings_interface}" = "xunknown"; then
-        AC_MSG_WARN([
-  --------------------------------------------
-   Unknown rdpSettings interface
-   RDP will be disabled.
-  --------------------------------------------]) 
-        have_freerdp=no
-    fi
-fi
-
-# Activate audio playback settings if present
-if test "x${have_freerdp}" = "xyes" -a "x${rdpsettings_audioplayback}" = "xyes"; then
-    AC_DEFINE([HAVE_RDPSETTINGS_AUDIOPLAYBACK],,
-              [Whether the rdpSettings structure has AudioPlayback settings])
-fi
-
-# Activate audio capture settings if present
-if test "x${have_freerdp}" = "xyes" -a "x${rdpsettings_audiocapture}" = "xyes"; then
-    AC_DEFINE([HAVE_RDPSETTINGS_AUDIOCAPTURE],,
-              [Whether the rdpSettings structure has AudioCapture settings])
-fi
-
-# Activate device redirection settings if present
-if test "x${have_freerdp}" = "xyes" -a "x${rdpsettings_deviceredirection}" = "xyes"; then
-    AC_DEFINE([HAVE_RDPSETTINGS_DEVICEREDIRECTION],,
-              [Whether the rdpSettings structure has DeviceRedirection settings])
-fi
-
-# Check if the type CHANNEL_ENTRY_POINTS_FREERDP exists, if not define it to CHANNEL_ENTRY_POINTS_EX
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_TYPE([CHANNEL_ENTRY_POINTS_FREERDP],,
-                  AC_DEFINE([CHANNEL_ENTRY_POINTS_FREERDP],[CHANNEL_ENTRY_POINTS_EX], [Type compatibility]),
-                  [[#include <freerdp/svc.h>]])
-fi
-
-# Check if the freerdp version header exists
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_HEADERS([freerdp/version.h])
-fi
-
-#
-# FreeRDP: rdpBitmap
-#
-
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_MSG_CHECKING([whether rdpBitmap.Decompress() requires the codec_id])
-    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <winpr/wtypes.h>
-                                        #include <freerdp/freerdp.h>
-                                        void __decompress(rdpContext* context,
-                                                          rdpBitmap* bitmap,
-                                                          UINT8* data,
-                                                          int width,
-                                                          int height,
-                                                          int bpp,
-                                                          int length,
-                                                          BOOL compressed,
-                                                          int codec_id);
-                                        rdpBitmap b = { .Decompress = __decompress };]])],
-                      [AC_MSG_RESULT([yes])],
-                      [AC_MSG_RESULT([no])
-                       AC_DEFINE([LEGACY_RDPBITMAP],,
-                                 [Whether the legacy rdpBitmap API was found])])
-fi
-
-#
-# FreeRDP: IWTSVirtualChannelCallback
-#
-
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_MSG_CHECKING([whether IWTSVirtualChannelCallback.OnDataReceived() uses a wStream])
-    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <winpr/wtypes.h>
-                                        #include <freerdp/dvc.h>
-                                        #include <freerdp/freerdp.h>
-                                        int __data_received(
-                                            IWTSVirtualChannelCallback* channel_callback,
-                                            wStream* stream);
-                                        IWTSVirtualChannelCallback cb = {
-                                            .OnDataReceived = __data_received
-                                        };
-                                        int main() {
-                                            return
-                                                cb.OnDataReceived(NULL, NULL);
-                                        }]])],
-                      [AC_MSG_RESULT([yes])],
-                      [AC_MSG_RESULT([no])
-                       AC_DEFINE([LEGACY_IWTSVIRTUALCHANNELCALLBACK],,
-                                 [Whether the legacy IWTSVirtualChannelCallback API was found])])
-fi
-
-#
-# FreeRDP: Decompression function variants
-#
-
-# Check whether interleaved_decompress() can handle the palette
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_MSG_CHECKING([whether interleaved_decompress() accepts an additional palette parameter])
-    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <freerdp/codec/interleaved.h>
-
-                                        int main() {
-                                            BYTE* palette = NULL;
-                                            interleaved_decompress(NULL, NULL, 0, 0, NULL, 0, 0, 0, 0, 0, 0, palette);
-                                        }]])],
-                      [AC_MSG_RESULT([yes])
-                       AC_DEFINE([INTERLEAVED_DECOMPRESS_TAKES_PALETTE],,
-                                 [Whether interleaved_decompress() accepts an additional palette parameter])],
-                      [AC_MSG_RESULT([no])])
-fi
-
-# Check whether planar_decompress() will handle flipping
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_MSG_CHECKING([whether planar_decompress() can flip])
-    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <freerdp/codec/planar.h>
-
-                                        int main() {
-                                            BOOL* flip = TRUE;
-                                            planar_decompress(NULL, NULL, 0, NULL, 0, 0, 0, 0, 0, 0, flip);
-                                        }]])],
-                      [AC_MSG_RESULT([yes])
-                       AC_DEFINE([PLANAR_DECOMPRESS_CAN_FLIP],,
-                                 [Whether planar_decompress() can flip])],
-                      [AC_MSG_RESULT([no])])
-fi
-
-#
-# FreeRDP: rdpContext
-#
-
-# Check for rdpContext.codecs
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_MEMBERS([rdpContext.codecs],
-                     [AC_DEFINE([FREERDP_BITMAP_REQUIRES_ALIGNED_MALLOC],,
-                                [Whether this version of FreeRDP requires _aligned_malloc() for bitmap data])],,
-                     [[#include <freerdp/freerdp.h>]])
-fi
-
-#
-# FreeRDP: rdpPalette
-#
-
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_MSG_CHECKING([whether rdpPalette.entries is static])
-    AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <freerdp/update.h>
-                                        rdpPalette p;
-                                        PALETTE_ENTRY* foo = p.entries;]])],
-                      [AC_MSG_RESULT([yes])],
-                      [AC_MSG_RESULT([no])
-                       AC_DEFINE([LEGACY_RDPPALETTE],,
-                                 [Whether the legacy rdpPalette API was found])])
-fi
-
-#
-# FreeRDP: rdpPointer
-#
-
-# Check for SetDefault and SetNull members of rdpPointer
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_MEMBERS([rdpPointer.SetDefault,
-                      rdpPointer.SetNull],
-                     ,,
-                     [[#include <freerdp/freerdp.h>]])
-fi
-
-#
-# FreeRDP: wMessage / RDP_EVENT
-#
-
-# Check for current (as of 1.1) wMessage interface
-if test "x${have_freerdp}" = "xyes"
-then
-    AC_CHECK_MEMBERS([wMessage.id],
-                     [event_interface=stable],,
-                     [[#include <winpr/collections.h>]])
-
-    # If not current, check for legacy (RDP_EVENT) interface
-    if test "x${event_interface}" = "xunknown"
-    then
-        AC_CHECK_MEMBERS([RDP_EVENT.event_class],
-                         [event_interface=legacy],,
-                         [[#include <freerdp/types.h>]])
-    fi
-
-    # Set defines based on interface type, warn if unknown
-    if test "x${event_interface}" = "xlegacy"; then
-        AC_DEFINE([LEGACY_EVENT],,
-                  [Whether the legacy RDP_EVENT API was found])
-    elif test "x${event_interface}" = "xunknown"; then
-        AC_MSG_WARN([
-  --------------------------------------------
-   Unknown event interface
-   RDP will be disabled.
-  --------------------------------------------])
-        have_freerdp=no
-    fi
-fi
-
-AM_CONDITIONAL([LEGACY_FREERDP_EXTENSIONS], [test "x${legacy_freerdp_extensions}" = "xyes"])
-AM_CONDITIONAL([ENABLE_WINPR], [test "x${have_winpr}"   = "xyes"])
-AM_CONDITIONAL([ENABLE_RDP],   [test "x${have_freerdp}" = "xyes"])
-
-AC_SUBST(RDP_LIBS)
+AC_SUBST(FREERDP2_PLUGIN_DIR)
+AM_CONDITIONAL([ENABLE_RDP], [test "x${have_freerdp2}" = "xyes"])
 
 #
 # libssh2
@@ -1183,6 +895,88 @@ AM_CONDITIONAL([ENABLE_WEBP], [test "x${have_webp}" = "xyes"])
 AC_SUBST(WEBP_LIBS)
 
 #
+# libwebsockets
+#
+
+have_libwebsockets=disabled
+WEBSOCKETS_LIBS=
+AC_ARG_WITH([websockets],
+            [AS_HELP_STRING([--with-websockets],
+                            [support WebSockets @<:@default=check@:>@])],
+            [],
+            [with_websockets=check])
+
+if test "x$with_websockets" != "xno"
+then
+    have_libwebsockets=yes
+    AC_CHECK_LIB([websockets],
+                 [lws_create_context],
+                 [WEBSOCKETS_LIBS="$WEBSOCKETS_LIBS -lwebsockets"],
+                 [AC_MSG_WARN([
+  --------------------------------------------
+   Unable to find libwebsockets.
+   Support for Kubernetes will be disabled.
+  --------------------------------------------])
+                 have_libwebsockets=no])
+fi
+
+if test "x$with_websockets" != "xno"
+then
+
+    # Check for client-specific closed event, which must be used in favor of
+    # the generic closed event if libwebsockets is recent enough to provide
+    # this
+    AC_CHECK_DECL([LWS_CALLBACK_CLIENT_CLOSED],
+        [AC_DEFINE([HAVE_LWS_CALLBACK_CLIENT_CLOSED],,
+                   [Whether LWS_CALLBACK_CLIENT_CLOSED is defined])],,
+        [#include <libwebsockets.h>])
+
+    # Older versions of libwebsockets may not define a flag for requesting
+    # global initialization of OpenSSL, instead performing that initialization
+    # by default
+    AC_CHECK_DECL([LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT],
+        [AC_DEFINE([HAVE_LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT],,
+                   [Whether LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT is defined])],,
+        [#include <libwebsockets.h>])
+
+    # Older versions of libwebsockets do not define special macros for SSL
+    # connection flags, instead relying on documented integer values
+    AC_CHECK_DECL([LCCSCF_USE_SSL],
+        [AC_DEFINE([HAVE_LCCSCF_USE_SSL],,
+                   [Whether LCCSCF_USE_SSL is defined])],,
+        [#include <libwebsockets.h>])
+
+    # Older versions of libwebsockets do not define a dummy callback which
+    # must be invoked after the main event callback is invoked; the main event
+    # callback must instead manually return zero
+    AC_CHECK_DECL([lws_callback_http_dummy],
+        [AC_DEFINE([HAVE_LWS_CALLBACK_HTTP_DUMMY],,
+                   [Whether lws_callback_http_dummy() is defined])],,
+        [#include <libwebsockets.h>])
+
+fi
+
+AM_CONDITIONAL([ENABLE_WEBSOCKETS],
+               [test "x${have_libwebsockets}"  = "xyes"])
+
+AC_SUBST(WEBSOCKETS_LIBS)
+
+#
+# Kubernetes
+#
+
+AC_ARG_ENABLE([kubernetes],
+              [AS_HELP_STRING([--disable-kubernetes],
+                              [do not build support for attaching to Kubernetes pods])],
+              [],
+              [enable_kubernetes=yes])
+
+AM_CONDITIONAL([ENABLE_KUBERNETES], [test "x${enable_kubernetes}"  = "xyes" \
+                                       -a "x${have_libwebsockets}" = "xyes" \
+                                       -a "x${have_ssl}"           = "xyes" \
+                                       -a "x${have_terminal}"      = "xyes"])
+
+#
 # guacd
 #
 
@@ -1228,11 +1022,13 @@ AM_CONDITIONAL([ENABLE_GUACLOG], [test "x${enable_guaclog}"  = "xyes"])
 
 AC_CONFIG_FILES([Makefile
                  doc/Doxyfile
-                 tests/Makefile
                  src/common/Makefile
+                 src/common/tests/Makefile
                  src/common-ssh/Makefile
+                 src/common-ssh/tests/Makefile
                  src/terminal/Makefile
                  src/libguac/Makefile
+                 src/libguac/tests/Makefile
                  src/guacd/Makefile
                  src/guacd/man/guacd.8
                  src/guacd/man/guacd.conf.5
@@ -1241,7 +1037,9 @@ AC_CONFIG_FILES([Makefile
                  src/guaclog/Makefile
                  src/guaclog/man/guaclog.1
                  src/pulse/Makefile
+                 src/protocols/kubernetes/Makefile
                  src/protocols/rdp/Makefile
+                 src/protocols/rdp/tests/Makefile
                  src/protocols/ssh/Makefile
                  src/protocols/telnet/Makefile
                  src/protocols/vnc/Makefile])
@@ -1251,10 +1049,11 @@ AC_OUTPUT
 # Protocol build status
 #
 
-AM_COND_IF([ENABLE_RDP],    [build_rdp=yes],    [build_rdp=no])
-AM_COND_IF([ENABLE_SSH],    [build_ssh=yes],    [build_ssh=no])
-AM_COND_IF([ENABLE_TELNET], [build_telnet=yes], [build_telnet=no])
-AM_COND_IF([ENABLE_VNC],    [build_vnc=yes],    [build_vnc=no])
+AM_COND_IF([ENABLE_KUBERNETES], [build_kubernetes=yes], [build_kubernetes=no])
+AM_COND_IF([ENABLE_RDP],        [build_rdp=yes],        [build_rdp=no])
+AM_COND_IF([ENABLE_SSH],        [build_ssh=yes],        [build_ssh=no])
+AM_COND_IF([ENABLE_TELNET],     [build_telnet=yes],     [build_telnet=no])
+AM_COND_IF([ENABLE_VNC],        [build_vnc=yes],        [build_vnc=no])
 
 #
 # Service / tool build status
@@ -1271,6 +1070,18 @@ AM_COND_IF([ENABLE_GUACLOG], [build_guaclog=yes], [build_guaclog=no])
 AM_COND_IF([ENABLE_INIT], [build_init="${init_dir}"], [build_init=no])
 
 #
+# Systemd units
+#
+
+AM_COND_IF([ENABLE_SYSTEMD], [build_systemd="${systemd_dir}"], [build_systemd=no])
+
+#
+# FreeRDP plugins
+#
+
+AM_COND_IF([ENABLE_RDP], [build_rdp_plugins="${FREERDP2_PLUGIN_DIR}"], [build_rdp_plugins=no])
+
+#
 # Display summary
 #
 
@@ -1281,7 +1092,7 @@ $PACKAGE_NAME version $PACKAGE_VERSION
 
    Library status:
 
-     freerdp ............. ${have_freerdp}
+     freerdp2 ............ ${have_freerdp2}
      pango ............... ${have_pango}
      libavcodec .......... ${have_libavcodec}
      libavformat.......... ${have_libavformat}
@@ -1293,15 +1104,17 @@ $PACKAGE_NAME version $PACKAGE_VERSION
      libVNCServer ........ ${have_libvncserver}
      libvorbis ........... ${have_vorbis}
      libpulse ............ ${have_pulse}
+     libwebsockets ....... ${have_libwebsockets}
      libwebp ............. ${have_webp}
      wsock32 ............. ${have_winsock}
 
    Protocol support:
 
-      RDP ....... ${build_rdp}
-      SSH ....... ${build_ssh}
-      Telnet .... ${build_telnet}
-      VNC ....... ${build_vnc}
+      Kubernetes .... ${build_kubernetes}
+      RDP ........... ${build_rdp}
+      SSH ........... ${build_ssh}
+      Telnet ........ ${build_telnet}
+      VNC ........... ${build_vnc}
 
    Services / tools:
 
@@ -1309,7 +1122,9 @@ $PACKAGE_NAME version $PACKAGE_VERSION
       guacenc .... ${build_guacenc}
       guaclog .... ${build_guaclog}
 
+   FreeRDP plugins: ${build_rdp_plugins}
    Init scripts: ${build_init}
+   Systemd units: ${build_systemd}
 
 Type \"make\" to compile $PACKAGE_NAME.
 "

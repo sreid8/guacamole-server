@@ -37,54 +37,6 @@
 #include <guacamole/socket.h>
 #include <pango/pangocairo.h>
 
-/**
- * Clears the currently-selected region, removing the highlight.
- */
-static void __guac_terminal_display_clear_select(guac_terminal_display* display) {
-
-    guac_socket* socket = display->client->socket;
-    guac_layer* select_layer = display->select_layer;
-
-    guac_protocol_send_rect(socket, select_layer, 0, 0, 1, 1);
-    guac_protocol_send_cfill(socket, GUAC_COMP_SRC, select_layer,
-            0x00, 0x00, 0x00, 0x00);
-
-    guac_client_end_frame(display->client);
-    guac_socket_flush(socket);
-
-    /* Text is no longer selected */
-    display->text_selected =
-    display->selection_committed = false;
-
-}
-
-/**
- * Returns whether at least one character within the given range is selected.
- */
-static bool __guac_terminal_display_selected_contains(guac_terminal_display* display,
-        int start_row, int start_column, int end_row, int end_column) {
-
-    /* If test range starts after highlight ends, does not intersect */
-    if (start_row > display->selection_end_row)
-        return false;
-
-    if (start_row == display->selection_end_row
-            && start_column > display->selection_end_column)
-        return false;
-
-    /* If test range ends before highlight starts, does not intersect */
-    if (end_row < display->selection_start_row)
-        return false;
-
-    if (end_row == display->selection_start_row
-            && end_column < display->selection_start_column)
-        return false;
-
-    /* Otherwise, does intersect */
-    return true;
-
-}
-
 /* Maps any codepoint onto a number between 0 and 511 inclusive */
 int __guac_terminal_hash_codepoint(int codepoint) {
 
@@ -126,7 +78,12 @@ int __guac_terminal_set_colors(guac_terminal_display* display,
     }
 
     display->glyph_foreground = *foreground;
+    guac_terminal_display_lookup_color(display,
+            foreground->palette_index, &display->glyph_foreground);
+
     display->glyph_background = *background;
+    guac_terminal_display_lookup_color(display,
+            background->palette_index, &display->glyph_background);
 
     /* Modify color if half-bright (low intensity) */
     if (attributes->half_bright && !attributes->bold) {
@@ -246,16 +203,17 @@ int __guac_terminal_set(guac_terminal_display* display, int row, int col, int co
 
 guac_terminal_display* guac_terminal_display_alloc(guac_client* client,
         const char* font_name, int font_size, int dpi,
-        guac_terminal_color* foreground, guac_terminal_color* background) {
-
-    PangoFontMap* font_map;
-    PangoFont* font;
-    PangoFontMetrics* metrics;
-    PangoContext* context;
+        guac_terminal_color* foreground, guac_terminal_color* background,
+        guac_terminal_color (*palette)[256]) {
 
     /* Allocate display */
     guac_terminal_display* display = malloc(sizeof(guac_terminal_display));
     display->client = client;
+
+    /* Initially no font loaded */
+    display->font_desc = NULL;
+    display->char_width = 0;
+    display->char_height = 0;
 
     /* Create default surface */
     display->display_layer = guac_client_alloc_layer(client);
@@ -267,40 +225,9 @@ guac_terminal_display* guac_terminal_display_alloc(guac_client* client,
     guac_protocol_send_move(client->socket, display->select_layer,
             display->display_layer, 0, 0, 0);
 
-    /* Get font */
-    display->font_desc = pango_font_description_new();
-    pango_font_description_set_family(display->font_desc, font_name);
-    pango_font_description_set_weight(display->font_desc, PANGO_WEIGHT_NORMAL);
-    pango_font_description_set_size(display->font_desc,
-            font_size * PANGO_SCALE * dpi / 96);
-
-    font_map = pango_cairo_font_map_get_default();
-    context = pango_font_map_create_context(font_map);
-
-    font = pango_font_map_load_font(font_map, context, display->font_desc);
-    if (font == NULL) {
-        guac_client_abort(display->client, GUAC_PROTOCOL_STATUS_SERVER_ERROR, "Unable to get font \"%s\"", font_name);
-        free(display);
-        return NULL;
-    }
-
-    metrics = pango_font_get_metrics(font, NULL);
-    if (metrics == NULL) {
-        guac_client_abort(display->client, GUAC_PROTOCOL_STATUS_SERVER_ERROR,
-                "Unable to get font metrics for font \"%s\"", font_name);
-        free(display);
-        return NULL;
-    }
-
     display->default_foreground = display->glyph_foreground = *foreground;
     display->default_background = display->glyph_background = *background;
-
-    /* Calculate character dimensions */
-    display->char_width =
-        pango_font_metrics_get_approximate_digit_width(metrics) / PANGO_SCALE;
-    display->char_height =
-        (pango_font_metrics_get_descent(metrics)
-            + pango_font_metrics_get_ascent(metrics)) / PANGO_SCALE;
+    display->default_palette = palette;
 
     /* Initially empty */
     display->width = 0;
@@ -308,14 +235,27 @@ guac_terminal_display* guac_terminal_display_alloc(guac_client* client,
     display->operations = NULL;
 
     /* Initially nothing selected */
-    display->text_selected =
-    display->selection_committed = false;
+    display->text_selected = false;
+
+    /* Attempt to load font */
+    if (guac_terminal_display_set_font(display, font_name, font_size, dpi)) {
+        guac_client_abort(display->client, GUAC_PROTOCOL_STATUS_SERVER_ERROR,
+                "Unable to set initial font \"%s\"", font_name);
+        free(display);
+        return NULL;
+    }
 
     return display;
 
 }
 
 void guac_terminal_display_free(guac_terminal_display* display) {
+
+    /* Free font description */
+    pango_font_description_free(display->font_desc);
+
+    /* Free default palette. */
+    free(display->default_palette);
 
     /* Free operations buffers */
     free(display->operations);
@@ -328,6 +268,12 @@ void guac_terminal_display_free(guac_terminal_display* display) {
 void guac_terminal_display_reset_palette(guac_terminal_display* display) {
 
     /* Reinitialize palette with default values */
+    if (display->default_palette) {
+        memcpy(display->palette, *display->default_palette,
+               sizeof(GUAC_TERMINAL_INITIAL_PALETTE));
+        return;
+    }
+
     memcpy(display->palette, GUAC_TERMINAL_INITIAL_PALETTE,
             sizeof(GUAC_TERMINAL_INITIAL_PALETTE));
 
@@ -352,6 +298,18 @@ int guac_terminal_display_assign_color(guac_terminal_display* display,
 
 int guac_terminal_display_lookup_color(guac_terminal_display* display,
         int index, guac_terminal_color* color) {
+
+    /* Use default foreground if foreground pseudo-index is given */
+    if (index == GUAC_TERMINAL_COLOR_FOREGROUND) {
+        *color = display->default_foreground;
+        return 0;
+    }
+
+    /* Use default background if background pseudo-index is given */
+    if (index == GUAC_TERMINAL_COLOR_BACKGROUND) {
+        *color = display->default_background;
+        return 0;
+    }
 
     /* Lookup fails if out-of-bounds */
     if (index < 0 || index > 255)
@@ -402,11 +360,6 @@ void guac_terminal_display_copy_columns(guac_terminal_display* display, int row,
 
     }
 
-    /* If selection visible and committed, clear if update touches selection */
-    if (display->text_selected && display->selection_committed &&
-        __guac_terminal_display_selected_contains(display, row, start_column, row, end_column))
-            __guac_terminal_display_clear_select(display);
-
 }
 
 void guac_terminal_display_copy_rows(guac_terminal_display* display,
@@ -452,11 +405,6 @@ void guac_terminal_display_copy_rows(guac_terminal_display* display,
 
     }
 
-    /* If selection visible and committed, clear if update touches selection */
-    if (display->text_selected && display->selection_committed &&
-        __guac_terminal_display_selected_contains(display, start_row, 0, end_row, display->width - 1))
-            __guac_terminal_display_clear_select(display);
-
 }
 
 void guac_terminal_display_set_columns(guac_terminal_display* display, int row,
@@ -490,11 +438,6 @@ void guac_terminal_display_set_columns(guac_terminal_display* display, int row,
         current += character->width;
 
     }
-
-    /* If selection visible and committed, clear if update touches selection */
-    if (display->text_selected && display->selection_committed &&
-        __guac_terminal_display_selected_contains(display, row, start_column, row, end_column))
-            __guac_terminal_display_clear_select(display);
 
 }
 
@@ -558,10 +501,6 @@ void guac_terminal_display_resize(guac_terminal_display* display, int width, int
             display->select_layer,
             display->char_width  * width,
             display->char_height * height);
-
-    /* If selection visible and committed, clear */
-    if (display->text_selected && display->selection_committed)
-        __guac_terminal_display_clear_select(display);
 
 }
 
@@ -715,11 +654,15 @@ void __guac_terminal_display_flush_clear(guac_terminal_display* display) {
                 int rect_width, rect_height;
 
                 /* Color of the rectangle to draw */
-                const guac_terminal_color* color;
+                guac_terminal_color color;
                 if (current->character.attributes.reverse != current->character.attributes.cursor)
-                   color = &current->character.attributes.foreground;
+                   color = current->character.attributes.foreground;
                 else
-                   color = &current->character.attributes.background;
+                   color = current->character.attributes.background;
+
+                /* Rely only on palette index if defined */
+                guac_terminal_display_lookup_color(display,
+                        color.palette_index, &color);
 
                 /* Current row within a subrect */
                 guac_terminal_operation* rect_current_row;
@@ -742,7 +685,7 @@ void __guac_terminal_display_flush_clear(guac_terminal_display* display) {
                         /* If not identical operation, stop */
                         if (rect_current->type != GUAC_CHAR_SET
                                 || guac_terminal_has_glyph(rect_current->character.value)
-                                || guac_terminal_colorcmp(joining_color, color) != 0)
+                                || guac_terminal_colorcmp(joining_color, &color) != 0)
                             break;
 
                         /* Next column */
@@ -787,7 +730,7 @@ void __guac_terminal_display_flush_clear(guac_terminal_display* display) {
                         /* Mark clear operations as NOP */
                         if (rect_current->type == GUAC_CHAR_SET
                                 && !guac_terminal_has_glyph(rect_current->character.value)
-                                && guac_terminal_colorcmp(joining_color, color) == 0)
+                                && guac_terminal_colorcmp(joining_color, &color) == 0)
                             rect_current->type = GUAC_CHAR_NOP;
 
                         /* Next column */
@@ -807,7 +750,7 @@ void __guac_terminal_display_flush_clear(guac_terminal_display* display) {
                         row * display->char_height,
                         rect_width * display->char_width,
                         rect_height * display->char_height,
-                        color->red, color->green, color->blue,
+                        color.red, color.green, color.blue,
                         0xFF);
 
             } /* end if clear operation */
@@ -888,15 +831,19 @@ void guac_terminal_display_dup(guac_terminal_display* display, guac_user* user,
 
 }
 
-void guac_terminal_display_commit_select(guac_terminal_display* display) {
-    display->selection_committed = true;
-}
-
 void guac_terminal_display_select(guac_terminal_display* display,
         int start_row, int start_col, int end_row, int end_col) {
 
     guac_socket* socket = display->client->socket;
     guac_layer* select_layer = display->select_layer;
+
+    /* Do nothing if selection is unchanged */
+    if (display->text_selected
+            && display->selection_start_row    == start_row
+            && display->selection_start_column == start_col
+            && display->selection_end_row      == end_row
+            && display->selection_end_column   == end_col)
+        return;
 
     /* Text is now selected */
     display->text_selected = true;
@@ -978,8 +925,98 @@ void guac_terminal_display_select(guac_terminal_display* display,
     guac_protocol_send_cfill(socket, GUAC_COMP_SRC, select_layer,
             0x00, 0x80, 0xFF, 0x60);
 
-    guac_client_end_frame(display->client);
-    guac_socket_flush(socket);
+}
+
+void guac_terminal_display_clear_select(guac_terminal_display* display) {
+
+    /* Do nothing if nothing is selected */
+    if (!display->text_selected)
+        return;
+
+    guac_socket* socket = display->client->socket;
+    guac_layer* select_layer = display->select_layer;
+
+    guac_protocol_send_rect(socket, select_layer, 0, 0, 1, 1);
+    guac_protocol_send_cfill(socket, GUAC_COMP_SRC, select_layer,
+            0x00, 0x00, 0x00, 0x00);
+
+    /* Text is no longer selected */
+    display->text_selected = false;
+
+}
+
+int guac_terminal_display_set_font(guac_terminal_display* display,
+        const char* font_name, int font_size, int dpi) {
+
+    PangoFontDescription* font_desc;
+
+    /* Build off existing font description if possible */
+    if (display->font_desc != NULL)
+        font_desc = pango_font_description_copy(display->font_desc);
+
+    /* Create new font description if there is nothing to copy */
+    else {
+        font_desc = pango_font_description_new();
+        pango_font_description_set_weight(font_desc, PANGO_WEIGHT_NORMAL);
+    }
+
+    /* Optionally update font name */
+    if (font_name != NULL)
+        pango_font_description_set_family(font_desc, font_name);
+
+    /* Optionally update size */
+    if (font_size != -1) {
+        pango_font_description_set_size(font_desc,
+                font_size * PANGO_SCALE * dpi / 96);
+    }
+
+    PangoFontMap* font_map = pango_cairo_font_map_get_default();
+    PangoContext* context = pango_font_map_create_context(font_map);
+
+    /* Load font from font map */
+    PangoFont* font = pango_font_map_load_font(font_map, context, font_desc);
+    if (font == NULL) {
+        guac_client_log(display->client, GUAC_LOG_INFO, "Unable to load "
+                "font \"%s\"", pango_font_description_get_family(font_desc));
+        pango_font_description_free(font_desc);
+        return 1;
+    }
+
+    /* Get metrics from loaded font */
+    PangoFontMetrics* metrics = pango_font_get_metrics(font, NULL);
+    if (metrics == NULL) {
+        guac_client_log(display->client, GUAC_LOG_INFO, "Unable to get font "
+                "metrics for font \"%s\"",
+                pango_font_description_get_family(font_desc));
+        pango_font_description_free(font_desc);
+        return 1;
+    }
+
+    /* Save effective size of current display */
+    int pixel_width = display->width * display->char_width;
+    int pixel_height = display->height * display->char_height;
+
+    /* Calculate character dimensions using metrics */
+    display->char_width =
+        pango_font_metrics_get_approximate_digit_width(metrics) / PANGO_SCALE;
+    display->char_height =
+        (pango_font_metrics_get_descent(metrics)
+            + pango_font_metrics_get_ascent(metrics)) / PANGO_SCALE;
+
+    /* Atomically replace old font description */
+    PangoFontDescription* old_font_desc = display->font_desc;
+    display->font_desc = font_desc;
+    pango_font_description_free(old_font_desc);
+
+    /* Recalculate dimensions which will fit within current surface */
+    int new_width = pixel_width / display->char_width;
+    int new_height = pixel_height / display->char_height;
+
+    /* Resize display if dimensions have changed */
+    if (new_width != display->width || new_height != display->height)
+        guac_terminal_display_resize(display, new_width, new_height);
+
+    return 0;
 
 }
 
