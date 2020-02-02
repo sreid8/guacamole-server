@@ -23,8 +23,8 @@
 
 
 # Use Debian as base for the build
-ARG DEBIAN_VERSION=stable
-FROM debian:${DEBIAN_VERSION} AS builder
+ARG VERSION=8
+FROM centos:${VERSION} AS builder
 
 # Base directory for installed build artifacts.
 # Due to limitations of the Docker image build process, this value is
@@ -37,26 +37,23 @@ ARG BUILD_DIR=/tmp/guacd-docker-BUILD
 ARG BUILD_DEPENDENCIES="              \
         autoconf                      \
         automake                      \
-        freerdp2-dev                  \
         gcc                           \
-        libcairo2-dev                 \
-        libjpeg62-turbo-dev           \
-        libossp-uuid-dev              \
-        libpango1.0-dev               \
-        libpulse-dev                  \
-        libssh2-1-dev                 \
-        libssl-dev                    \
-        libtelnet-dev                 \
+        cairo-devel                   \
+        libjpeg-turbo-devel           \
+        uuid-devel                    \
+        pango-devel                   \
         libtool                       \
-        libvncserver-dev              \
-        libwebsockets-dev             \
-        libwebp-dev                   \
-        make"
+        libwebp-devel                 \
+        make                          \
+        ffmpeg-devel"
 
 # Bring build environment up to date and install build dependencies
-RUN apt-get update                         && \
-    apt-get install -y $BUILD_DEPENDENCIES && \
-    rm -rf /var/lib/apt/lists/*
+RUN dnf -y update                          && \
+    dnf install --nogpgcheck https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm && \
+    dnf install --nogpgcheck https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm https://download1.rpmfusion.org/nonfree/el/rpmfusion-nonfree-release-8.noarch.rpm && \
+    dnf config-manager --enable PowerTools && \
+    dnf -y install $BUILD_DEPENDENCIES     && \
+    dnf -y clean all
 
 # Add configuration scripts
 COPY src/guacd-docker/bin "${PREFIX_DIR}/bin/"
@@ -74,8 +71,7 @@ RUN ${PREFIX_DIR}/bin/list-dependencies.sh    \
         ${PREFIX_DIR}/lib/freerdp2/guac*.so   \
         > ${PREFIX_DIR}/DEPENDENCIES
 
-# Use same Debian as the base for the runtime image
-FROM debian:${DEBIAN_VERSION}-slim
+FROM centos:${VERSION}
 
 # Base directory for installed build artifacts.
 # Due to limitations of the Docker image build process, this value is
@@ -94,28 +90,23 @@ ARG RUNTIME_DEPENDENCIES="            \
         ghostscript                   \
         fonts-liberation              \
         fonts-dejavu                  \
-        xfonts-terminus"
+        xfonts-terminus               \
+        wget                          \
+        ffmpeg                        \
+        libwebp                       \
+        uuid" 
 
 # Copy build artifacts into this stage
 COPY --from=builder ${PREFIX_DIR} ${PREFIX_DIR}
 
 # Bring runtime environment up to date and install runtime dependencies
-RUN apt-get update                                          && \
-    apt-get install -y $RUNTIME_DEPENDENCIES                && \
-    apt-get install -y $(cat "${PREFIX_DIR}"/DEPENDENCIES)  && \
-    rm -rf /var/lib/apt/lists/*
+RUN dnf -y update                                           && \
+    dnf install --nogpgcheck https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm && \
+    dnf install --nogpgcheck https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm https://download1.rpmfusion.org/nonfree/el/rpmfusion-nonfree-release-8.noarch.rpm && \
+    dnf config-manager --enable PowerTools                  && \
+    dnf -y install $RUNTIME_DEPENDENCIES                    && \
+    dnf -y clean all
 
-# Link FreeRDP plugins into proper path
-RUN ${PREFIX_DIR}/bin/link-freerdp-plugins.sh \
-        ${PREFIX_DIR}/lib/freerdp2/libguac*.so
+RUN mkdir /testfile && wget -O /testfile/recording.guac https://github.com/apache/guacamole-client/raw/master/doc/guacamole-playback-example/src/main/webapp/recording.guac && mkdir /output
 
-# Expose the default listener port
-EXPOSE 4822
-
-# Start guacd, listening on port 0.0.0.0:4822
-#
-# Note the path here MUST correspond to the value specified in the 
-# PREFIX_DIR build argument.
-#
-CMD /usr/local/guacamole/sbin/guacd -b 0.0.0.0 -L $GUACD_LOG_LEVEL -f
-
+CMD /bin/bash
