@@ -81,9 +81,6 @@ int main(int argc, char* argv[]) {
     avcodec_register_all();
 #endif
 
-    /* Prepare libavformat */
-    av_register_all();
-
     /* Track number of overall failures */
     int total_files = argc - optind;
     int failures = 0;
