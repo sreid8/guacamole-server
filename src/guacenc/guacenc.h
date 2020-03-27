@@ -24,6 +24,8 @@
 
 #include <guacamole/client.h>
 
+#include <stdbool.h>
+
 /**
  * The width of the output video, in pixels, if no other width is given on the
  * command line. Note that different codecs will have different restrictions
@@ -48,6 +50,62 @@
  * The default log level below which no messages should be logged.
  */
 #define GUACENC_DEFAULT_LOG_LEVEL GUAC_LOG_INFO
+
+/**
+ * Runs guacenc in batch mode.
+ *
+ * @param width
+ *     The desired width of the resulting video
+ *
+ * @param height
+ *     The desired height of the resulting video
+ *
+ * @param bitrate
+ *     The desired bitrate of the resulting video
+ *
+ * @param argc
+ *     The argument count that guacenc was started with
+ *
+ * @param argv
+ *     The argument vector that guacenc was started with
+ *
+ * @param optind
+ *     The index at which the name of the input files
+ *     start in argv
+ *
+ * @param force
+ *     Force encoding even if files cannot be locked
+ */
+int guacenc_batch_mode(int width, int height, int bitrate,
+		int argc, char* argv[], int optind, bool force);
+
+
+/**
+ * Runs guacenc with a single input file and a single output file/
+ *
+ * @param width
+ *     The desired width of the resulting video
+ *
+ * @param height
+ *     The desired height of the resulting video
+ *
+ * @param bitrate
+ *     The desired bitrate of the resulting video
+ *
+ * @param input
+ *     The input file to be encoded
+ *
+ * @param output
+ *     The path and name for the resulting encoded video file
+ *
+ * @param codec
+ *     The codec the resulting video should use
+ *
+ * @param force
+ *     Force encoding even if files cannot be locked
+ */
+int guacenc_inout_mode(int width, int heifght, int bitate,
+		char* input, char* output, char* codec, bool force);
 
 #endif
 

@@ -33,17 +33,18 @@
 
 int main(int argc, char* argv[]) {
 
-    int i;
-
     /* Load defaults */
     bool force = false;
     int width = GUACENC_DEFAULT_WIDTH;
     int height = GUACENC_DEFAULT_HEIGHT;
     int bitrate = GUACENC_DEFAULT_BITRATE;
+    char* codec = "mpeg4";
+    char* input = NULL;
+    char* output = NULL;
 
     /* Parse arguments */
     int opt;
-    while ((opt = getopt(argc, argv, "s:r:f")) != -1) {
+    while ((opt = getopt(argc, argv, "s:r:f:i:o:")) != -1) {
 
         /* -s: Dimensions (WIDTHxHEIGHT) */
         if (opt == 's') {
@@ -65,6 +66,14 @@ int main(int argc, char* argv[]) {
         else if (opt == 'f')
             force = true;
 
+        /* -i: Input file */
+        else if (opt == 'i')
+        	input = optarg;
+
+        /* -o: Output file */
+        else if (opt == 'o')
+        	output = optarg;
+
         /* Invalid option */
         else {
             goto invalid_options;
@@ -85,72 +94,141 @@ int main(int argc, char* argv[]) {
     av_register_all();
 #endif
 
-    /* Track number of overall failures */
-    int total_files = argc - optind;
-    int failures = 0;
-
-    /* Abort if no files given */
-    if (total_files <= 0) {
-        guacenc_log(GUAC_LOG_INFO, "No input files specified. Nothing to do.");
-        return 0;
+    if (input == NULL && output == NULL) {
+    	return guacenc_batch_mode(width, height, bitrate, argc, argv,
+    			optind, force);
     }
 
-    guacenc_log(GUAC_LOG_INFO, "%i input file(s) provided.", total_files);
-
-    guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
-            "and %i bps.", width, height, bitrate);
-
-    /* Encode all input files */
-    for (i = optind; i < argc; i++) {
-
-        /* Get current filename */
-        const char* path = argv[i];
-
-        /* Generate output filename */
-        char out_path[4096];
-        int len = snprintf(out_path, sizeof(out_path), "%s.m4v", path);
-
-        /* Do not write if filename exceeds maximum length */
-        if (len >= sizeof(out_path)) {
-            guacenc_log(GUAC_LOG_ERROR, "Cannot write output file for \"%s\": "
-                    "Name too long", path);
-            continue;
-        }
-
-        /* Attempt encoding, log granular success/failure at debug level */
-        if (guacenc_encode(path, out_path, "mpeg4",
-                    width, height, bitrate, force)) {
-            failures++;
-            guacenc_log(GUAC_LOG_DEBUG,
-                    "%s was NOT successfully encoded.", path);
-        }
-        else
-            guacenc_log(GUAC_LOG_DEBUG, "%s was successfully encoded.", path);
-
+    if (input == NULL) {
+    	guacenc_log(GUAC_LOG_INFO, "No input file specified. "
+    			"Nothing to do.");
+    	return 1;
     }
 
-    /* Warn if at least one file failed */
-    if (failures != 0)
-        guacenc_log(GUAC_LOG_WARNING, "Encoding failed for %i of %i file(s).",
-                failures, total_files);
+    if (output == NULL) {
+    	guacenc_log(GUAC_LOG_ERROR, "No output file specified. "
+    			"Cannot continue.");
+    	return 1;
+    }
 
-    /* Notify of success */
-    else
-        guacenc_log(GUAC_LOG_INFO, "All files encoded successfully.");
+    return guacenc_inout_mode(width, height, bitrate, input, output,
+    		codec, force);
 
-    /* Encoding complete */
-    return 0;
 
     /* Display usage and exit with error if options are invalid */
 invalid_options:
 
-    fprintf(stderr, "USAGE: %s"
+fprintf(stderr, "USAGE: \n"
+            " BATCH MODE:\n"
+            " %s"
             " [-s WIDTHxHEIGHT]"
             " [-r BITRATE]"
             " [-f]"
-            " [FILE]...\n", argv[0]);
+            " [FILE]...\n\n"
+            " SINGLE FILE MODE:\n"
+            " %s"
+            " [-s WIDTHxHEIGHT]"
+            " [-r BITRATE]"
+            " [-i INPUT_FILE]"
+            " [-o OUTPUT_FILE]"
+            " [-f]\n"
+            , argv[0], argv[0]);
+
+
 
     return 1;
 
+}
+
+int guacenc_batch_mode(int width, int height, int bitrate,
+		int argc, char* argv[], int optind, bool force) {
+
+	int i;
+
+	/* Track number of overall failures */
+	int total_files = argc - optind;
+	int failures = 0;
+
+	/* Abort if no files given */
+	if (total_files <= 0) {
+		guacenc_log(GUAC_LOG_INFO, "No input files specified. Nothing to do.");
+		return 0;
+	}
+
+	guacenc_log(GUAC_LOG_INFO, "%i input file(s) provided.", total_files);
+
+	guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
+			"and %i bps.", width, height, bitrate);
+
+	/* Encode all input files */
+	for (i = optind; i < argc; i++) {
+
+		/* Get current filename */
+		const char* path = argv[i];
+
+		/* Generate output filename */
+		char out_path[4096];
+		int len = snprintf(out_path, sizeof(out_path), "%s.m4v", path);
+
+		/* Do not write if filename exceeds maximum length */
+		if (len >= sizeof(out_path)) {
+			guacenc_log(GUAC_LOG_ERROR, "Cannot write output file for \"%s\": "
+					"Name too long", path);
+			continue;
+		}
+
+		/* Attempt encoding, log granular success/failure at debug level */
+		if (guacenc_encode(path, out_path, "mpeg4",
+				width, height, bitrate, force)) {
+			failures++;
+			guacenc_log(GUAC_LOG_DEBUG,
+					"%s was NOT successfully encoded.", path);
+		}
+		else
+			guacenc_log(GUAC_LOG_DEBUG, "%s was successfully encoded.", path);
+
+	}
+
+	/* Warn if at least one file failed */
+	if (failures != 0)
+		guacenc_log(GUAC_LOG_WARNING, "Encoding failed for %i of %i file(s).",
+				failures, total_files);
+
+	/* Notify of success */
+	else
+		guacenc_log(GUAC_LOG_INFO, "All files encoded successfully.");
+
+	/* Encoding complete */
+	return 0;
+}
+
+int guacenc_inout_mode(int width, int height, int bitrate,
+		char* input, char* output, char* codec, bool force) {
+
+	guacenc_log(GUAC_LOG_INFO, "Video will be encoded at %ix%i "
+			"and %i bps.", width, height, bitrate);
+
+	/* Do not write if filename exceeds maximum length */
+	if (strlen(output) >= 4096) {
+		guacenc_log(GUAC_LOG_ERROR,
+				"Cannot write output file for \"%s\": "
+				"Name too long", output);
+		return 1;
+	}
+
+	/* Attempt encoding, log success/failure at debug level */
+	if (guacenc_encode(input, output, codec, width, height, bitrate,
+			force)) {
+		guacenc_log(GUAC_LOG_DEBUG,
+				"%s was NOT successfully encoded.", input);
+		return 1;
+	}
+	else {
+		guacenc_log(GUAC_LOG_DEBUG, "%s was successfully encoded.",
+				input);
+	}
+
+	/* Encoding complete */
+	return 0;
 }
 
