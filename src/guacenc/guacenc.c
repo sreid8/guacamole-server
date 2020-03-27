@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
 
     /* Parse arguments */
     int opt;
-    while ((opt = getopt(argc, argv, "s:r:f:i:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "s:r:f:i:o:c:")) != -1) {
 
         /* -s: Dimensions (WIDTHxHEIGHT) */
         if (opt == 's') {
@@ -74,6 +74,10 @@ int main(int argc, char* argv[]) {
         else if (opt == 'o')
         	output = optarg;
 
+        /* -c: libavcodec codec name */
+        else if (opt == 'c')
+        	codec = optarg;
+
         /* Invalid option */
         else {
             goto invalid_options;
@@ -97,6 +101,10 @@ int main(int argc, char* argv[]) {
     if (input == NULL && output == NULL) {
     	return guacenc_batch_mode(width, height, bitrate, argc, argv,
     			optind, force);
+    }
+
+    if (allowed_codec(codec) < 0) {
+    	goto invalid_codec;
     }
 
     if (input == NULL) {
@@ -131,11 +139,17 @@ fprintf(stderr, "USAGE: \n"
             " [-r BITRATE]"
             " [-i INPUT_FILE]"
             " [-o OUTPUT_FILE]"
+		    " [-c FFMPEG_CODEC]"
             " [-f]\n"
             , argv[0], argv[0]);
 
 
 
+    return 1;
+
+invalid_codec:
+
+    error_codecs();
     return 1;
 
 }
@@ -230,5 +244,34 @@ int guacenc_inout_mode(int width, int height, int bitrate,
 
 	/* Encoding complete */
 	return 0;
+}
+
+int allowed_codec(char* codec) {
+
+	int i;
+
+	char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
+	int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
+	for (i = 0; i < size; i++) {
+		if (strcmp(codec, allowed_codecs[i]) == 0) {
+			return 0;
+		}
+	}
+	return -1;
+
+}
+
+void error_codecs() {
+
+	int i;
+
+	fprintf(stderr, "ERROR: unsupported codec specified. List of "
+			"supported codecs:\n");
+	char* allowed_codecs[] = { GUACENC_ALLOWED_CODECS };
+	int size = sizeof(allowed_codecs) / sizeof(allowed_codecs[0]);
+	for (i = 0; i < size; i++) {
+		fprintf(stderr, "%s ", allowed_codecs[i]);
+	}
+	fprintf(stderr, "\n");
 }
 

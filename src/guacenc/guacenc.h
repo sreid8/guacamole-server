@@ -46,6 +46,8 @@
  */
 #define GUACENC_DEFAULT_BITRATE 2000000
 
+#define GUACENC_ALLOWED_CODECS "libx264", "mpeg4"
+
 /**
  * The default log level below which no messages should be logged.
  */
@@ -106,6 +108,23 @@ int guacenc_batch_mode(int width, int height, int bitrate,
  */
 int guacenc_inout_mode(int width, int heifght, int bitate,
 		char* input, char* output, char* codec, bool force);
+
+/**
+ * Determines if the requested codec is allowed by guacenc.
+ *
+ * @param
+ *     The name of the codec requested
+ *
+ * @return
+ *     0 if allowed, -1 if not allowed
+ */
+int allowed_codec(char* codec);
+
+/**
+ * Prints an error and lists the supported codecs tp stderr.
+ */
+
+void error_codecs(void);
 
 #endif
 
